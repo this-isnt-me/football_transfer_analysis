@@ -22,7 +22,14 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from .data_layer import get_edges, get_graph, node_names
+from .data_layer import (
+    get_edges,
+    get_graph,
+    get_league_names,
+    get_p2,
+    node_names,
+    p2_violations,
+)
 
 OUTSIDE_SYSTEM_ID = "OS1"
 POSITIONS = [
@@ -325,3 +332,288 @@ def ego_edges(club_id: str, season: int, window: str) -> pd.DataFrame:
     out = mv.merge(fin, on="transfer_id", how="left")
     out["direction"] = np.where(out["source"] == club_id, "out", "in")
     return out[["source", "target", "position", "fee", "direction", "transfer_id"]]
+
+
+# =========================================================================== #
+# Section 2 — cross-network, same type: CLUB vs LEAGUE via P2
+#
+# Aggregation stays *within one type* (movement->movement, finance->finance) so
+# the edge direction (and the finance reversal) is preserved end-to-end. The P2
+# map only relabels endpoints from club id to league id at the right
+# (season, window); it never crosses movement<->finance.
+# =========================================================================== #
+@st.cache_data(show_spinner=False)
+def p2_lookup() -> pd.DataFrame:
+    """1:1 ``(club, season, window) -> league`` lookup.
+
+    P2 resolves each triple to exactly one league (see ``p2_violation_count``);
+    we drop_duplicates defensively so an ambiguity could never duplicate edges
+    in a rollup (it would instead surface as a reconciliation mismatch)."""
+    p2 = get_p2()
+    return p2.drop_duplicates(["club", "season", "window"]).reset_index(drop=True)
+
+
+@st.cache_data(show_spinner=False)
+def p2_violation_count() -> int:
+    """Number of ``(club, season, window)`` triples mapping to >1 league (should be 0)."""
+    return int(len(p2_violations(get_p2())))
+
+
+def _relabel_to_league(edges: pd.DataFrame) -> pd.DataFrame:
+    """Add ``source_league`` / ``target_league`` to club edges via the P2 lookup,
+    matched on the endpoint's ``(club, season, window)``."""
+    lut = p2_lookup()
+    src = lut.rename(columns={"club": "source", "league": "source_league"})
+    tgt = lut.rename(columns={"club": "target", "league": "target_league"})
+    e = edges.merge(src, on=["source", "season", "window"], how="left")
+    e = e.merge(tgt, on=["target", "season", "window"], how="left")
+    return e
+
+
+# --------------------------------------------------------------------------- #
+# #16 Aggregation consistency check (P2 reconciliation)
+# --------------------------------------------------------------------------- #
+@st.cache_data(show_spinner="Reconciling club→league rollup (P2)…")
+def aggregation_reconciliation(layer: str) -> dict:
+    """Roll club edges up to leagues via P2 and diff against the league network.
+
+    Relabel each club edge's endpoints with their ``(season, window)`` league,
+    group by ``(source_league, target_league, season, window, position)`` and
+    sum (count for movement; count + summed fee for finance), then full-outer
+    compare to the league network grouped identically. A clean P2 makes every
+    diff exactly zero. Returns a summary dict plus a (hopefully empty) frame of
+    mismatched cells with league names attached.
+    """
+    club = get_edges(f"{layer}_club")
+    league = get_edges(f"{layer}_league")
+    e = _relabel_to_league(club)
+    unmapped = int(e["source_league"].isna().sum() + e["target_league"].isna().sum())
+
+    keys = ["source_league", "target_league", "season", "window", "position"]
+    lkeys = ["source", "target", "season", "window", "position"]
+    if layer == "movement":
+        roll = e.groupby(keys, observed=True).size().reset_index(name="n_roll")
+        lk = league.groupby(lkeys, observed=True).size().reset_index(name="n_league")
+    else:
+        roll = (e.groupby(keys, observed=True)
+                .agg(n_roll=("transfer_id", "size"), fee_roll=("weight", "sum")).reset_index())
+        lk = (league.groupby(lkeys, observed=True)
+              .agg(n_league=("transfer_id", "size"), fee_league=("weight", "sum")).reset_index())
+    lk = lk.rename(columns={"source": "source_league", "target": "target_league"})
+
+    m = roll.merge(lk, on=keys, how="outer")
+    m["n_roll"] = m["n_roll"].fillna(0).astype(int)
+    m["n_league"] = m["n_league"].fillna(0).astype(int)
+    m["n_diff"] = m["n_roll"] - m["n_league"]
+    bad_mask = m["n_diff"] != 0
+    if layer == "finance":
+        m["fee_roll"] = m["fee_roll"].fillna(0.0)
+        m["fee_league"] = m["fee_league"].fillna(0.0)
+        m["fee_diff"] = m["fee_roll"] - m["fee_league"]
+        bad_mask = bad_mask | (m["fee_diff"].abs() > 1e-3)
+
+    names = get_league_names()
+    mism = m[bad_mask].copy()
+    mism["source"] = mism["source_league"].map(names).fillna(mism["source_league"])
+    mism["target"] = mism["target_league"].map(names).fillna(mism["target_league"])
+
+    summary = {
+        "layer": layer,
+        "n_club_edges": int(len(club)),
+        "n_league_edges": int(len(league)),
+        "p2_violations": p2_violation_count(),
+        "unmapped_endpoints": unmapped,
+        "n_rollup_cells": int(len(m)),
+        "count_mismatch_cells": int(bad_mask.sum()),
+        "sum_abs_count_diff": int(m["n_diff"].abs().sum()),
+        "mismatches": mism.reset_index(drop=True),
+    }
+    if layer == "finance":
+        summary["fee_mismatch_cells"] = int((m["fee_diff"].abs() > 1e-3).sum())
+        summary["sum_abs_fee_diff"] = float(m["fee_diff"].abs().sum())
+    summary["clean"] = (
+        summary["count_mismatch_cells"] == 0
+        and summary["unmapped_endpoints"] == 0
+        and summary["p2_violations"] == 0
+        and summary.get("fee_mismatch_cells", 0) == 0
+    )
+    return summary
+
+
+# --------------------------------------------------------------------------- #
+# #17 Node ranking correlation (league-net metric vs club-aggregate)
+# --------------------------------------------------------------------------- #
+@st.cache_data(show_spinner=False)
+def club_league_membership(layer: str) -> pd.DataFrame:
+    """Per ``(club, league)`` the fraction of the club's endpoint appearances (in
+    ``layer`` edges) that fall in that league — its time-weighted membership.
+
+    Used to allocate a club node-metric across the leagues it played in, so
+    league-switchers are split proportionally rather than force-assigned."""
+    e = _relabel_to_league(get_edges(f"{layer}_club"))
+    a = e[["source", "source_league"]].rename(columns={"source": "club", "source_league": "league"})
+    b = e[["target", "target_league"]].rename(columns={"target": "club", "target_league": "league"})
+    appear = pd.concat([a, b], ignore_index=True).dropna()
+    w = appear.groupby(["club", "league"], observed=True).size().rename("appearances").reset_index()
+    w["frac"] = w["appearances"] / w.groupby("club")["appearances"].transform("sum")
+    return w
+
+
+def _club_node_metric(layer: str, metric: str) -> pd.DataFrame:
+    """Per-club value of ``metric`` -> columns ``club``, ``cval``."""
+    if metric == "pagerank":
+        t = pagerank_table(layer, "club")[["node", "pagerank"]].rename(columns={"pagerank": "cval"})
+    elif metric == "degree":
+        d = degree_table("club")
+        t = d.assign(cval=d["in_degree"] + d["out_degree"])[["node", "cval"]]
+    else:  # spend / revenue
+        fs = finance_strength_table("club")
+        t = fs[["node", metric]].rename(columns={metric: "cval"})
+    return t.rename(columns={"node": "club"})
+
+
+def _league_node_metric(layer: str, metric: str) -> pd.DataFrame:
+    """Per-league (11-node network) value of ``metric`` -> ``node``, ``league_metric``."""
+    if metric == "pagerank":
+        return pagerank_table(layer, "league")[["node", "pagerank"]].rename(
+            columns={"pagerank": "league_metric"})
+    if metric == "degree":
+        d = degree_table("league")
+        return d.assign(league_metric=d["in_degree"] + d["out_degree"])[["node", "league_metric"]]
+    fs = finance_strength_table("league")
+    return fs[["node", metric]].rename(columns={metric: "league_metric"})
+
+
+@st.cache_data(show_spinner="Correlating club rollup vs league metric…")
+def ranking_correlation(layer: str, metric: str) -> tuple[pd.DataFrame, dict]:
+    """League-net metric vs the membership-weighted rollup of member-club metrics.
+
+    Returns ``(frame, stats)`` where ``frame`` has 11 rows (one per league) with
+    ``league_metric`` and ``club_rollup``, and ``stats`` holds Spearman/Kendall."""
+    from scipy.stats import kendalltau, spearmanr
+
+    lm = _league_node_metric(layer, metric)
+    cm = _club_node_metric(layer, metric)
+    mem = club_league_membership(layer).merge(cm, on="club", how="left")
+    mem["contrib"] = mem["cval"].fillna(0.0) * mem["frac"]
+    rolled = mem.groupby("league", observed=True)["contrib"].sum().rename("club_rollup").reset_index()
+
+    out = lm.merge(rolled, left_on="node", right_on="league", how="outer")
+    out["club_rollup"] = out["club_rollup"].fillna(0.0)
+    out["league_metric"] = out["league_metric"].fillna(0.0)
+    names = node_name_map("league")
+    out["name"] = out["node"].map(names).fillna(out["node"])
+    out = out[["node", "name", "league_metric", "club_rollup"]].sort_values(
+        "league_metric", ascending=False, ignore_index=True)
+
+    rho, p_rho = spearmanr(out["league_metric"], out["club_rollup"])
+    tau, p_tau = kendalltau(out["league_metric"], out["club_rollup"])
+    stats = {"spearman": float(rho), "spearman_p": float(p_rho),
+             "kendall": float(tau), "kendall_p": float(p_tau), "n": int(len(out))}
+    return out, stats
+
+
+# --------------------------------------------------------------------------- #
+# #18 Temporal divergence between scales
+# --------------------------------------------------------------------------- #
+@st.cache_data(show_spinner=False)
+def club_league_by_season() -> pd.DataFrame:
+    """``(club, season) -> league`` resolving the (rare) cross-window case by mode."""
+    p2 = get_p2()
+    g = (p2.groupby(["club", "season", "league"], observed=True).size()
+         .reset_index(name="n").sort_values("n", ascending=False)
+         .drop_duplicates(["club", "season"]))
+    return g[["club", "season", "league"]].reset_index(drop=True)
+
+
+def _club_season_metric(metric: str) -> pd.DataFrame:
+    """Per ``(club, season)`` value of the base metric -> ``club``, ``season``, ``value``."""
+    if metric == "volume":
+        df = get_edges("movement_club")
+        out = df.groupby(["source", "season"], observed=True).size().rename_axis(["club", "season"])
+        inn = df.groupby(["target", "season"], observed=True).size().rename_axis(["club", "season"])
+        s = out.add(inn, fill_value=0).rename("value").reset_index()
+    else:  # spend / revenue (finance reversal: spend=out/source, revenue=in/target)
+        df = get_edges("finance_club")
+        col = "source" if metric == "spend" else "target"
+        s = (df.groupby([col, "season"], observed=True)["weight"].sum()
+             .rename_axis(["club", "season"]).rename("value").reset_index())
+    return s
+
+
+def _league_season_metric(metric: str) -> pd.DataFrame:
+    """Per ``(league, season)`` total from the league network -> ``league``, ``season``, ``league_total``."""
+    if metric == "volume":
+        df = get_edges("movement_league")
+        out = df.groupby(["source", "season"], observed=True).size().rename_axis(["league", "season"])
+        inn = df.groupby(["target", "season"], observed=True).size().rename_axis(["league", "season"])
+        s = out.add(inn, fill_value=0).rename("league_total").reset_index()
+    else:
+        df = get_edges("finance_league")
+        col = "source" if metric == "spend" else "target"
+        s = (df.groupby([col, "season"], observed=True)["weight"].sum()
+             .rename_axis(["league", "season"]).rename("league_total").reset_index())
+    return s
+
+
+def _hhi(v: np.ndarray) -> float:
+    v = np.asarray(v, dtype=float)
+    v = v[v > 0]
+    if v.sum() == 0:
+        return float("nan")
+    s = v / v.sum()
+    return float((s ** 2).sum())
+
+
+@st.cache_data(show_spinner="Computing cross-scale trajectories…")
+def temporal_divergence(league_id: str, metric: str, concentration: str) -> tuple[pd.DataFrame, dict]:
+    """Per-season league-scale total vs club-scale concentration *within* that league.
+
+    ``concentration`` in {``top_share``, ``hhi``, ``gini``} over member clubs.
+    A season is a *divergence window* when the two series (min-max normalised)
+    move in opposite year-on-year directions. Returns ``(frame, stats)``."""
+    from scipy.stats import spearmanr
+
+    lt = _league_season_metric(metric)
+    lt = lt[lt["league"] == league_id][["season", "league_total"]]
+
+    csm = _club_season_metric(metric).merge(club_league_by_season(), on=["club", "season"], how="left")
+    csm = csm[csm["league"] == league_id]
+
+    rows = []
+    for season, grp in csm.groupby("season", observed=True):
+        vals = grp["value"].to_numpy()
+        vals = vals[vals > 0]
+        if vals.size == 0:
+            continue
+        if concentration == "top_share":
+            conc = float(vals.max() / vals.sum())
+        elif concentration == "hhi":
+            conc = _hhi(vals)
+        else:
+            conc = gini(vals)
+        rows.append({"season": int(season), "concentration": conc, "n_clubs": int(vals.size)})
+    conc_df = pd.DataFrame(rows)
+
+    df = lt.merge(conc_df, on="season", how="outer").sort_values("season", ignore_index=True)
+    df["season"] = df["season"].astype(int)
+
+    def _norm(s: pd.Series) -> pd.Series:
+        lo, hi = s.min(), s.max()
+        return (s - lo) / (hi - lo) if hi > lo else s * 0.0
+
+    df["league_norm"] = _norm(df["league_total"].fillna(0.0))
+    df["conc_norm"] = _norm(df["concentration"].fillna(0.0))
+    # divergence: YoY directions disagree
+    dl = df["league_norm"].diff()
+    dc = df["conc_norm"].diff()
+    df["divergent"] = (np.sign(dl) * np.sign(dc) < 0)
+
+    valid = df.dropna(subset=["league_total", "concentration"])
+    if len(valid) >= 3:
+        rho, p = spearmanr(valid["league_total"], valid["concentration"])
+    else:
+        rho, p = float("nan"), float("nan")
+    stats = {"spearman": float(rho), "spearman_p": float(p),
+             "n_seasons": int(len(valid)), "n_divergent": int(df["divergent"].sum())}
+    return df, stats

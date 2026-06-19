@@ -1,9 +1,13 @@
 import streamlit as st
 
-st.set_page_config(page_title="Section 2 — Cross Type", page_icon="⚽", layout="wide")
+from src.section2 import ANALYSES
+
+st.set_page_config(page_title="Section 2 — Club vs League", page_icon="⚽", layout="wide")
 st.title("Section 2 — Cross-Network, Same Type: Club vs League (#16–18)")
-st.info("Stub — analyses not implemented yet (Phase 3).")
-st.markdown(
-    "Planned (all using the P2 mapping): aggregation consistency check, node-ranking "
-    "correlation, and temporal divergence between scales."
-)
+st.caption("Compare the club and league views of the same network type, bridged by the "
+           "P2 (club, season, window) → league mapping. Aggregation stays within one type "
+           "so direction (and the finance reversal) is preserved.")
+
+choice = st.sidebar.radio("Analysis", list(ANALYSES.keys()), key="s2_choice")
+st.divider()
+ANALYSES[choice]()
