@@ -19,13 +19,8 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from . import metrics as M
-
-PALETTE = px.colors.qualitative.Safe
-
-
-def _grain(key: str, default: str = "club") -> str:
-    return st.radio("Grain", ["club", "league"], horizontal=True,
-                    index=0 if default == "club" else 1, key=f"grain_{key}")
+from . import ui
+from .ui import PALETTE
 
 
 # --------------------------------------------------------------------------- #
@@ -37,16 +32,13 @@ def render_19():
                "Top-left = high-volume / low-value feeder pipelines; bottom-right = "
                "low-volume / high-value marquee corridors. Log–log; counts include all "
                "moves, money excludes NULL-fee deals.")
-    grain = _grain("19")
+    grain = ui.grain_control("19")
     cf = M.corridor_flow_money(grain)
     paid = cf[cf["total_fee"] > 0].copy()
 
-    c1, c2 = st.columns(2)
+    c1, _ = st.columns(2)
     with c1:
         min_p = st.slider("Min players in corridor", 1, 30, 3 if grain == "club" else 1, key="mp19")
-    with c2:
-        hide_os = st.checkbox("Dim Outside-System corridors", value=True, key="os19") \
-            if grain == "club" else False
     sub = paid[paid["n_players"] >= min_p].copy()
     sub["fee_m"] = sub["total_fee"] / 1e6
 
@@ -79,7 +71,7 @@ def render_20():
     st.subheader("#20 — Fee Per Player (edge-level efficiency)")
     st.caption("Median fee per individual deal (P1). High = quality-over-quantity "
                "sellers/corridors; low = feeders. NULL-fee moves excluded from the median.")
-    grain = _grain("20")
+    grain = ui.grain_control("20")
     c1, c2, c3 = st.columns(3)
     with c1:
         by = st.radio("Group by", ["corridor", "seller", "buyer"], horizontal=True, key="by20")
@@ -97,12 +89,9 @@ def render_20():
     fpp["median_m"] = fpp["median_fee"] / 1e6
     label_col = "corridor" if by == "corridor" else "label"
     top = fpp.nlargest(n, "median_fee")
-    fig = px.bar(top, x="median_m", y=label_col, orientation="h",
-                 title=f"Top {n} {by}s by median fee/player (€m)",
-                 hover_data=["n_deals", "median_m"], color_discrete_sequence=PALETTE)
-    fig.update_layout(height=560, margin=dict(l=10, r=10, t=50, b=10),
-                      yaxis=dict(autorange="reversed"))
-    st.plotly_chart(fig, width="stretch")
+    ui.ranked_bar(top, "median_m", label_col,
+                  f"Top {n} {by}s by median fee/player (€m)",
+                  height=560, hover_data=["n_deals", "median_m"])
 
     fees = M.matched_fees(grain) / 1e6
     fig2 = px.histogram(fees, nbins=60, title="Per-deal fee distribution (€m, log x)",
@@ -124,7 +113,7 @@ def render_21():
                "fees; large negative = pure cash extractor.")
     c1, c2, c3 = st.columns(3)
     with c1:
-        grain = _grain("21")
+        grain = ui.grain_control("21")
     with c2:
         lens = st.radio("Lens", ["selling", "buying"], horizontal=True, key="lens21",
                         help="selling: reversed movement vs as-is finance; "
@@ -163,7 +152,7 @@ def render_22():
     st.subheader("#22 — Positional Fee Efficiency Over Time")
     st.caption("Median fee per player by position × season (P1). Reveals positional "
                "inflation cycles. Fees nominal — no deflation applied.")
-    grain = _grain("22", default="league")
+    grain = ui.grain_control("22", default="league")
     pt = M.positional_fee_time(grain)
     mode = st.radio("Display", ["Heatmap", "Multi-line"], horizontal=True, key="mode22")
     pt = pt.copy()
@@ -192,7 +181,7 @@ def render_23():
     st.subheader("#23 — Window Arbitrage (Summer vs Winter)")
     st.caption("Fee-per-player differences by window, controlled for position (like for "
                "like). The January premium/discount.")
-    grain = _grain("23")
+    grain = ui.grain_control("23")
     wf = M.window_fee(grain).dropna(subset=["position"])
     wf = wf.copy()
     wf["fee_m"] = wf["fee"] / 1e6
@@ -222,7 +211,7 @@ def render_24():
     st.caption("Directed triad census of the aggregated movement graph vs a "
                "degree-preserving random null. Positive z = over-represented motif "
                "(talent escalators 030T, recycling loops 030C, cliques 300).")
-    grain = _grain("24", default="league")
+    grain = ui.grain_control("24", default="league")
     c1, c2, c3 = st.columns(3)
     with c1:
         n_null = st.slider("Null samples", 10, 50, 20, key="nn24")
@@ -272,7 +261,7 @@ def render_25():
     st.caption("Net money per node × position = revenue (sold) − spend (bought). "
                "Red = net spender on that position, blue = net earner. Reveals "
                "'sell expensive strikers, buy cheap defenders' patterns.")
-    grain = _grain("25")
+    grain = ui.grain_control("25")
     n = st.slider("Top-X nodes (by gross money)", 5, 30, 18, key="n25")
     ca = M.capital_asymmetry(grain)
     if grain == "club":

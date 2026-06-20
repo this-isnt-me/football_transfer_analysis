@@ -9,7 +9,6 @@ Reads everything from cached ``src.metrics`` helpers — no graph is reloaded.
 """
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -17,9 +16,9 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 from . import metrics as M
+from . import ui
 from .data_layer import get_league_names
-
-PALETTE = px.colors.qualitative.Safe
+from .ui import PALETTE
 
 
 # --------------------------------------------------------------------------- #
@@ -122,8 +121,7 @@ def render_17():
     fig.update_traces(textposition="top center", marker=dict(size=13))
     # rank-parity diagonal
     m = max(df["league_metric"].max(), df["club_rollup"].max())
-    fig.add_trace(go.Scatter(x=[0, m], y=[0, m], mode="lines",
-                             line=dict(dash="dash", color="grey"), showlegend=False))
+    ui.add_parity_line(fig, m)
     fig.update_layout(height=560, margin=dict(l=10, r=10, t=50, b=10), showlegend=False,
                       xaxis_title=f"league-network {opts[mkey]}",
                       yaxis_title=f"club rollup {opts[mkey]}")
@@ -172,7 +170,6 @@ def render_18():
         st.info("No data for this league / metric.")
         return
 
-    unit = "€" if base in ("spend", "revenue") else "transfers"
     yfac = 1e6 if base in ("spend", "revenue") else 1
     ylabel = f"{_BASE[base]} (€m)" if base in ("spend", "revenue") else _BASE[base]
 

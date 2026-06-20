@@ -120,9 +120,10 @@ running PageRank**, especially at league level. Community detection is club-leve
 ## Verified schema
 
 The data model above is the *documented* schema. Phase 0 verified it against the actual
-GraphML files (networkx 3.6.1, Python 3.12) via `explore_data.py` + `probe_anomalies.py`
-(both throwaway). **Several documented claims are wrong — see deviations. Do NOT code
-around them; design Phase 1 around the verified reality.**
+GraphML files (networkx 3.6.1, Python 3.12) via `scripts/explore_data.py` +
+`scripts/probe_anomalies.py` (re-run both if `data/` is regenerated). **Several documented
+claims are wrong — see deviations. Do NOT code around them; design Phase 1 around the
+verified reality.**
 
 > **⚠ The `data/` files were regenerated on 2026-06-18 and DIFFER from the guide's table
 > and from a prior Phase-0 run.** They now appear **pre-deduplicated**: edge counts are

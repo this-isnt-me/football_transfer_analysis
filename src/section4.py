@@ -12,20 +12,13 @@ Reads from cached ``src.metrics`` helpers — no graph is reloaded.
 from __future__ import annotations
 
 import numpy as np
-import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
 from . import metrics as M
-
-PALETTE = px.colors.qualitative.Safe
-QUAL = px.colors.qualitative.Dark24
-
-
-def _grain(key: str, default: str = "club") -> str:
-    return st.radio("Grain", ["club", "league"], horizontal=True,
-                    index=0 if default == "club" else 1, key=f"grain_{key}")
+from . import ui
+from .ui import PALETTE, QUAL
 
 
 # --------------------------------------------------------------------------- #
@@ -36,7 +29,7 @@ def render_26():
     st.caption("Cross-layer centrality on the **aligned** layers (finance reversed to "
                "sell→buy). x = talent pull (movement PageRank), y = money pull (reversed-"
                "finance PageRank). Top-right = versatile nodes central in *both*.")
-    grain = _grain("26")
+    grain = ui.grain_control("26")
     df, stats = M.multilayer_centrality(grain)
     if grain == "club":
         df = M.drop_non_clubs(df)
@@ -134,7 +127,7 @@ def render_28():
     st.caption("Composite of z-scored components across all four nets: net talent gain "
                "(movement in−out), financial muscle (spend−revenue), prestige (movement + "
                "reversed-finance PageRank). Adjust weights to test sensitivity.")
-    grain = _grain("28")
+    grain = ui.grain_control("28")
     c1, c2, c3 = st.columns(3)
     with c1:
         wt = st.slider("Weight: net talent", 0.0, 2.0, 1.0, 0.25, key="wt28")
@@ -210,7 +203,7 @@ def render_30():
                "up, so shocks like the 2020 COVID dip show in YoY, not the raw level.")
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        grain = _grain("30", default="league")
+        grain = ui.grain_control("30", default="league")
     with c2:
         metric = st.radio("Metric", ["fee", "volume"], horizontal=True, key="met30")
     with c3:
@@ -300,7 +293,7 @@ def render_32():
     st.caption("Feeder signature = sell many players (movement out) **+ net money IN** "
                "(revenue > spend). Bubble = destination concentration (Herfindahl); colour "
                "= league. Top-right with big bubbles = specialised selling/development clubs.")
-    grain = _grain("32")
+    grain = ui.grain_control("32")
     fd = M.feeder_clubs(grain)
     if grain == "club":
         fd = M.drop_non_clubs(fd)

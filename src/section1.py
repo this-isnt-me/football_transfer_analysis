@@ -12,56 +12,15 @@ League views (11 nodes) use bars, heatmaps and chord-style matrices.
 from __future__ import annotations
 
 import networkx as nx
-import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
 from . import metrics as M
+from . import ui
 from .data_layer import get_edges
-
-PALETTE = px.colors.qualitative.Safe
-
-
-# --------------------------------------------------------------------------- #
-# Shared controls
-# --------------------------------------------------------------------------- #
-def _grain_control(key: str, default: str = "club") -> str:
-    return st.radio(
-        "Grain", ["club", "league"], horizontal=True,
-        index=0 if default == "club" else 1, key=f"grain_{key}",
-    )
-
-
-def _topx(key: str, default: int = 20, lo: int = 5, hi: int = 40) -> int:
-    return st.slider("Top-X", lo, hi, default, key=f"topx_{key}")
-
-
-def _exclude_os(key: str, grain: str, default: bool = True) -> bool:
-    if grain != "club":
-        return False
-    return st.checkbox(
-        "Exclude Outside System (OS1) from rankings", value=default, key=f"os_{key}",
-        help="OS1 is the single external-clubs catch-all node; it dominates volume "
-             "and is shown separately rather than ranked beside real clubs.",
-    )
-
-
-def _maybe_drop_os(df, grain, exclude, id_col="node"):
-    if grain == "club" and exclude:
-        os_row = df[df[id_col] == M.OUTSIDE_SYSTEM_ID]
-        return M.drop_outside_system(df, id_col), os_row
-    return df, df.iloc[0:0]
-
-
-def _bar(df, x, y, title, color=None, orientation="h"):
-    fig = px.bar(df, x=x, y=y, title=title, color=color,
-                 color_discrete_sequence=PALETTE, orientation=orientation)
-    fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), height=480)
-    if orientation == "h":
-        fig.update_layout(yaxis=dict(autorange="reversed"))
-    st.plotly_chart(fig, width="stretch")
+from .ui import PALETTE
 
 
 # --------------------------------------------------------------------------- #
@@ -71,23 +30,23 @@ def render_01():
     st.subheader("#1 — In / Out-Degree")
     st.caption("Movement: out-degree = players sold, in-degree = players recruited. "
                "Net importers (above the diagonal) vs net exporters (below).")
-    grain = _grain_control("01")
+    grain = ui.grain_control("01")
     c1, c2 = st.columns(2)
     with c1:
-        n = _topx("01")
+        n = ui.topx("01")
     with c2:
-        excl = _exclude_os("01", grain)
+        excl = ui.exclude_os("01", grain)
 
     deg = M.degree_table(grain)
-    ranked, os_row = _maybe_drop_os(deg, grain, excl)
+    ranked, os_row = ui.maybe_drop_os(deg, grain, excl)
 
     col1, col2 = st.columns(2)
     with col1:
         top_out = ranked.nlargest(n, "out_degree")
-        _bar(top_out, "out_degree", "label", f"Top {n} — out-degree (players sold)")
+        ui.ranked_bar(top_out, "out_degree", "label", f"Top {n} — out-degree (players sold)")
     with col2:
         top_in = ranked.nlargest(n, "in_degree")
-        _bar(top_in, "in_degree", "label", f"Top {n} — in-degree (players recruited)")
+        ui.ranked_bar(top_in, "in_degree", "label", f"Top {n} — in-degree (players recruited)")
 
     fig = px.scatter(
         ranked, x="out_degree", y="in_degree", hover_name="label",
@@ -95,8 +54,7 @@ def render_01():
         opacity=0.5, color_discrete_sequence=PALETTE,
     )
     m = max(ranked["out_degree"].max(), ranked["in_degree"].max())
-    fig.add_trace(go.Scatter(x=[0, m], y=[0, m], mode="lines",
-                             line=dict(dash="dash", color="grey"), showlegend=False))
+    ui.add_parity_line(fig, m)
     fig.update_layout(height=480, margin=dict(l=10, r=10, t=50, b=10))
     st.plotly_chart(fig, width="stretch")
     if not os_row.empty:
@@ -113,18 +71,18 @@ def render_02():
     st.caption("Talent-pull hierarchy. As-is: prestige of **destinations** (where "
                "players go). Reversed: prestige as a **seller**. Parallel edges are "
                "aggregated to transfer counts first.")
-    grain = _grain_control("02")
+    grain = ui.grain_control("02")
     c1, c2, c3 = st.columns(3)
     with c1:
-        n = _topx("02", 25)
+        n = ui.topx("02", 25)
     with c2:
-        excl = _exclude_os("02", grain)
+        excl = ui.exclude_os("02", grain)
     with c3:
         reverse = st.toggle("Reverse (selling prestige)", key="rev02")
 
     pr = M.pagerank_table("movement", grain, reverse=reverse)
-    ranked, os_row = _maybe_drop_os(pr, grain, excl)
-    _bar(ranked.head(n), "pagerank", "label",
+    ranked, os_row = ui.maybe_drop_os(pr, grain, excl)
+    ui.ranked_bar(ranked.head(n), "pagerank", "label",
          f"Top {n} PageRank — {'selling' if reverse else 'destination'} prestige")
     if not os_row.empty:
         st.caption(f"Outside System (OS1) PageRank = {os_row.iloc[0]['pagerank']:.4f} (excluded).")
@@ -141,11 +99,11 @@ def render_03():
     with c1:
         k = st.select_slider("Pivot sources (k)", [200, 300, 500, 750, 1000], value=500, key="k03")
     with c2:
-        n = _topx("03", 15)
+        n = ui.topx("03", 15)
     with c3:
-        excl = _exclude_os("03", "club")
+        excl = ui.exclude_os("03", "club")
     bt = M.betweenness_table(k=k)
-    ranked, os_row = _maybe_drop_os(bt, "club", excl)
+    ranked, os_row = ui.maybe_drop_os(bt, "club", excl)
     show = ranked.head(n)[["node", "name", "betweenness"]].copy()
     show.insert(0, "rank", range(1, len(show) + 1))
     st.dataframe(show, hide_index=True, width="stretch")
@@ -159,22 +117,20 @@ def render_03():
 def render_04():
     st.subheader("#4 — Position-Filtered Volume (club × position)")
     st.caption("Specialisation by position. Heatmap of transfer counts; clubs as rows.")
-    grain = _grain_control("04")
+    grain = ui.grain_control("04")
     c1, c2, c3 = st.columns(3)
     with c1:
         side = st.radio("Side", ["out (sold)", "in (bought)"], horizontal=True, key="side04")
         side = side.split()[0]
     with c2:
-        n = _topx("04", 20)
+        n = ui.topx("04", 20)
     with c3:
-        excl = _exclude_os("04", grain)
+        excl = ui.exclude_os("04", grain)
 
     pv = M.position_volume(grain, side=side)
     if grain == "club" and excl:
         pv = M.drop_outside_system(pv)
-    totals = pv.groupby(["node", "label"], observed=True)["count"].sum().reset_index()
-    top_nodes = totals.nlargest(n, "count")["node"]
-    sub = pv[pv["node"].isin(top_nodes)]
+    sub = ui.top_nodes_by(pv, "count", n)
     mat = sub.pivot_table(index="label", columns="position", values="count",
                           fill_value=0, aggfunc="sum").reindex(columns=M.POSITIONS, fill_value=0)
     order = mat.sum(axis=1).sort_values(ascending=False).index
@@ -191,7 +147,7 @@ def render_04():
 def render_05():
     st.subheader("#5 — Reciprocity")
     st.caption("Share of edges with a reciprocal partner — repeat trading corridors / swaps.")
-    grain = _grain_control("05")
+    grain = ui.grain_control("05")
     c1, c2 = st.columns(2)
     with c1:
         st.metric("Movement reciprocity", f"{M.reciprocity_overall('movement', grain):.3f}")
@@ -228,18 +184,17 @@ def render_05():
 # --------------------------------------------------------------------------- #
 def render_06():
     st.subheader("#6 — Seasonal Degree Evolution")
-    grain = _grain_control("06")
+    grain = ui.grain_control("06")
     c1, c2, c3 = st.columns(3)
     with c1:
         side = st.radio("Side", ["out (sold)", "in (bought)"], horizontal=True, key="side06").split()[0]
     with c2:
-        n = _topx("06", 20)
+        n = ui.topx("06", 20)
     with c3:
-        excl = _exclude_os("06", grain)
+        excl = ui.exclude_os("06", grain)
     sd = M.seasonal_degree(grain, side=side)
     if grain == "club" and excl:
         sd = M.drop_outside_system(sd)
-    totals = sd.groupby(["node", "label"], observed=True)["degree"].sum().reset_index()
 
     if grain == "league":
         fig = px.line(sd.sort_values("season"), x="season", y="degree", color="label",
@@ -248,8 +203,7 @@ def render_06():
         fig.update_layout(height=520, margin=dict(l=10, r=10, t=50, b=10))
         st.plotly_chart(fig, width="stretch")
     else:
-        top_nodes = totals.nlargest(n, "degree")["node"]
-        sub = sd[sd["node"].isin(top_nodes)]
+        sub = ui.top_nodes_by(sd, "degree", n)
         mat = sub.pivot_table(index="label", columns="season", values="degree",
                               fill_value=0, aggfunc="sum")
         order = mat.sum(axis=1).sort_values(ascending=False).index
@@ -264,20 +218,18 @@ def render_06():
 # --------------------------------------------------------------------------- #
 def render_07():
     st.subheader("#7 — Transfer Window Comparison (Summer vs Winter)")
-    grain = _grain_control("07")
+    grain = ui.grain_control("07")
     c1, c2 = st.columns(2)
     with c1:
-        n = _topx("07", 15)
+        n = ui.topx("07", 15)
     with c2:
-        excl = _exclude_os("07", grain)
+        excl = ui.exclude_os("07", grain)
     wv = M.window_volume(grain)
     if grain == "club" and excl:
         wv = M.drop_outside_system(wv)
-    totals = wv.groupby(["node", "label"], observed=True)["count"].sum().reset_index()
-    top_nodes = totals.nlargest(n if grain == "club" else 11, "count")["node"]
-    sub = wv[wv["node"].isin(top_nodes)]
+    sub = ui.top_nodes_by(wv, "count", n if grain == "club" else 11)
     fig = px.bar(sub, x="label", y="count", color="window", barmode="group",
-                 title=f"Summer vs Winter outgoing volume — top {len(top_nodes)} {grain}s",
+                 title=f"Summer vs Winter outgoing volume — top {sub['node'].nunique()} {grain}s",
                  color_discrete_sequence=PALETTE)
     fig.update_layout(height=520, margin=dict(l=10, r=10, t=50, b=80), xaxis_tickangle=-40)
     st.plotly_chart(fig, width="stretch")
@@ -292,7 +244,7 @@ def render_07():
 def render_08():
     st.subheader("#8 — Position Supply Trends Over Time")
     st.caption("Movement volume per position per season (weight = supply).")
-    grain = _grain_control("08", default="league")
+    grain = ui.grain_control("08", default="league")
     ps = M.position_supply(grain)
     mode = st.radio("Display", ["Stacked area", "Multi-line"], horizontal=True, key="mode08")
     if mode == "Stacked area":
@@ -314,24 +266,24 @@ def render_09():
     st.subheader("#9 — Out / In-Strength (spend vs revenue)")
     st.caption("**Finance reversal:** out-strength = spend (money paid), "
                "in-strength = revenue (money received); net profit = revenue − spend.")
-    grain = _grain_control("09")
+    grain = ui.grain_control("09")
     c1, c2 = st.columns(2)
     with c1:
-        n = _topx("09", 20)
+        n = ui.topx("09", 20)
     with c2:
-        excl = _exclude_os("09", grain)
+        excl = ui.exclude_os("09", grain)
     fs = M.finance_strength_table(grain)
-    ranked, os_row = _maybe_drop_os(fs, grain, excl)
+    ranked, os_row = ui.maybe_drop_os(fs, grain, excl)
 
     col1, col2 = st.columns(2)
     with col1:
         top_spend = ranked.nlargest(n, "spend").copy()
         top_spend["spend_m"] = top_spend["spend"] / 1e6
-        _bar(top_spend, "spend_m", "label", f"Top {n} spenders (€m paid)")
+        ui.ranked_bar(top_spend, "spend_m", "label", f"Top {n} spenders (€m paid)")
     with col2:
         top_rev = ranked.nlargest(n, "revenue").copy()
         top_rev["revenue_m"] = top_rev["revenue"] / 1e6
-        _bar(top_rev, "revenue_m", "label", f"Top {n} earners (€m received)")
+        ui.ranked_bar(top_rev, "revenue_m", "label", f"Top {n} earners (€m received)")
 
     sc = ranked.copy()
     sc["spend_m"] = sc["spend"] / 1e6
@@ -340,8 +292,7 @@ def render_09():
                      title="Spend vs revenue (€m) — diagonal = break-even",
                      color_discrete_sequence=PALETTE)
     m = max(sc["spend_m"].max(), sc["revenue_m"].max())
-    fig.add_trace(go.Scatter(x=[0, m], y=[0, m], mode="lines",
-                             line=dict(dash="dash", color="grey"), showlegend=False))
+    ui.add_parity_line(fig, m)
     fig.update_layout(height=480, margin=dict(l=10, r=10, t=50, b=10))
     st.plotly_chart(fig, width="stretch")
 
@@ -367,8 +318,8 @@ def render_10():
     st.subheader("#10 — Flow Concentration (Gini / Lorenz)")
     st.caption("Inequality of flow across nodes. Expect movement < finance "
                "(money is far more concentrated than players).")
-    grain = _grain_control("10")
-    excl = _exclude_os("10", grain)
+    grain = ui.grain_control("10")
+    excl = ui.exclude_os("10", grain)
 
     deg = M.degree_table(grain)
     fs = M.finance_strength_table(grain)
@@ -402,17 +353,17 @@ def render_11():
     st.subheader("#11 — Weighted PageRank on Finance")
     st.caption("Finance edges run buyer → seller. As-is: **selling power** "
                "(extracting big fees from wealthy buyers). Reversed: buying/spending prestige.")
-    grain = _grain_control("11")
+    grain = ui.grain_control("11")
     c1, c2, c3 = st.columns(3)
     with c1:
-        n = _topx("11", 25)
+        n = ui.topx("11", 25)
     with c2:
-        excl = _exclude_os("11", grain)
+        excl = ui.exclude_os("11", grain)
     with c3:
         reverse = st.toggle("Reverse (buying prestige)", key="rev11")
     pr = M.pagerank_table("finance", grain, reverse=reverse)
-    ranked, os_row = _maybe_drop_os(pr, grain, excl)
-    _bar(ranked.head(n), "pagerank", "label",
+    ranked, os_row = ui.maybe_drop_os(pr, grain, excl)
+    ui.ranked_bar(ranked.head(n), "pagerank", "label",
          f"Top {n} finance PageRank — {'buying' if reverse else 'selling'} prestige")
     if not os_row.empty:
         st.caption(f"Outside System (OS1) PageRank = {os_row.iloc[0]['pagerank']:.4f} (excluded).")
@@ -425,20 +376,18 @@ def render_12():
     st.subheader("#12 — Seasonal Spending Trajectory")
     st.caption("Per-node spend / revenue across seasons. Fees are nominal — "
                "compare trends, not absolute eras (no deflation applied).")
-    grain = _grain_control("12")
+    grain = ui.grain_control("12")
     c1, c2, c3 = st.columns(3)
     with c1:
         metric = st.radio("Metric", ["spend", "revenue", "net_spend"], horizontal=True, key="m12")
     with c2:
-        n = _topx("12", 10)
+        n = ui.topx("12", 10)
     with c3:
-        excl = _exclude_os("12", grain)
+        excl = ui.exclude_os("12", grain)
     sf = M.seasonal_finance(grain)
     if grain == "club" and excl:
         sf = M.drop_outside_system(sf)
-    totals = sf.groupby(["node", "label"], observed=True)[metric].sum().abs().reset_index()
-    keep = totals.nlargest(n if grain == "club" else 11, metric)["node"]
-    sub = sf[sf["node"].isin(keep)].copy()
+    sub = ui.top_nodes_by(sf, metric, n if grain == "club" else 11, use_abs=True).copy()
     sub[metric + "_m"] = sub[metric] / 1e6
     fig = px.line(sub.sort_values("season"), x="season", y=metric + "_m", color="label",
                   markers=True, title=f"{metric} (€m) over season",
@@ -452,7 +401,7 @@ def render_12():
 # --------------------------------------------------------------------------- #
 def render_13():
     st.subheader("#13 — Winter vs Summer Financial Comparison")
-    grain = _grain_control("13")
+    grain = ui.grain_control("13")
     fe = M.fee_edges(grain)
     c1, c2 = st.columns(2)
     with c1:
@@ -480,7 +429,7 @@ def render_14():
     st.subheader("#14 — Position-Based Valuation")
     st.caption("Fee distribution by position (median-sorted). Fees right-skewed → "
                "box/violin on a log scale; report medians.")
-    grain = _grain_control("14")
+    grain = ui.grain_control("14")
     fe = M.fee_edges(grain).dropna(subset=["position"])
     order = fe.groupby("position")["fee"].median().sort_values(ascending=False).index.tolist()
     kind = st.radio("Chart", ["Box", "Violin"], horizontal=True, key="k14")

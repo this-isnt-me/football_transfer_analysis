@@ -1,9 +1,15 @@
-"""THROWAWAY follow-up probe. Resolves the anomalies explore_data.py surfaced:
-inconsistent position key, extra attrs, P1 subset relationship, mojibake."""
+"""Phase-0 follow-up probe. Resolves the anomalies explore_data.py surfaced:
+inconsistent position key, extra attrs, P1 subset relationship, mojibake.
+Re-run with ``explore_data.py`` whenever the ``data/`` files are regenerated.
+
+    python scripts/probe_anomalies.py
+"""
 import collections
+from pathlib import Path
+
 import networkx as nx
 
-DATA = "data"
+DATA = str(Path(__file__).resolve().parent.parent / "data")
 FILES = {
     "movement_club":   f"{DATA}/movement_club_net.graphml.xml",
     "movement_league": f"{DATA}/movement_league_net.graphml.xml",
@@ -66,7 +72,6 @@ for u, v, d in G["finance_club"].edges(data=True):
 print(f"checked={checked} invariant_violations={violations} position_divergences={pos_div}")
 
 print("\n### Mojibake: read raw bytes around a suspect name to confirm file is clean UTF-8 ###")
-import re
 with open(FILES["movement_club"], "rb") as f:
     blob = f.read(4_000_000)
 idx = blob.find(b"Universidad Cat")

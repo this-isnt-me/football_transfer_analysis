@@ -2,9 +2,9 @@
 
 Run with:  streamlit run Home.py
 
-This is the Phase 1 scaffold: it wires up the shared data layer (graphs + tidy
-edge frames + the P1/P2 mechanisms) and provides stub navigation. None of the 37
-analyses are implemented yet — each section page is a placeholder.
+The landing page: it loads the shared data layer (graphs + tidy edge frames +
+the P1/P2 mechanisms) and shows a network overview plus a P1/P2 health check.
+The 37 analyses live on the five section pages (see the sidebar).
 """
 import pandas as pd
 import streamlit as st
@@ -29,8 +29,8 @@ st.set_page_config(
 st.title("⚽ Football Transfer Network Analysis")
 st.caption(
     "Four directed multigraphs of football transfers — player movement and money "
-    "flow, at club and league scale. This app will implement 37 analyses across 5 "
-    "sections; this page confirms the shared data layer is wired up."
+    "flow, at club and league scale. This app implements 37 analyses across 5 "
+    "sections (sidebar); this page shows the shared data layer and its health check."
 )
 
 # --------------------------------------------------------------------------- #
@@ -105,7 +105,7 @@ with st.expander("Peek at a tidy edge frame (movement_club)"):
 st.divider()
 st.subheader("Sections")
 st.markdown(
-    "Use the sidebar to navigate. Analyses are not implemented yet — each page is a stub.\n\n"
+    "Use the sidebar to navigate the five section pages:\n\n"
     "- **Section 1** — Single-network analyses (#1–15)\n"
     "- **Section 2** — Cross-network, same type: club vs league (#16–18)\n"
     "- **Section 3** — Cross-network, same granularity: movement vs finance (#19–25)\n"

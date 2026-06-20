@@ -1,10 +1,17 @@
-"""THROWAWAY Phase-0 exploration. Verifies the documented schema against the
-actual GraphML files. Safe to delete after reporting."""
+"""Phase-0 schema explorer. Verifies the documented schema against the actual
+GraphML files (node/edge counts, attr keys, season/window/position values,
+transfer_id uniqueness, Outside-System encoding). CLAUDE.md says to re-run this
+and ``probe_anomalies.py`` whenever the ``data/`` files are regenerated.
+
+    python scripts/explore_data.py
+"""
 import collections
 import itertools
+from pathlib import Path
+
 import networkx as nx
 
-DATA = "data"
+DATA = str(Path(__file__).resolve().parent.parent / "data")
 FILES = {
     "movement_club":   f"{DATA}/movement_club_net.graphml.xml",
     "movement_league": f"{DATA}/movement_league_net.graphml.xml",
