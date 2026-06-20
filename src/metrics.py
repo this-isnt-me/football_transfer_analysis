@@ -17,6 +17,8 @@ Invariants respected (see CLAUDE.md):
 """
 from __future__ import annotations
 
+import igraph as ig
+import leidenalg as la
 import networkx as nx
 import numpy as np
 import pandas as pd
@@ -33,6 +35,11 @@ from .data_layer import (
 )
 
 OUTSIDE_SYSTEM_ID = "OS1"
+# Club-level pseudo-nodes that are NOT real competitor clubs. OS1 (Outside
+# System) is documented; "Without Club" (free agency) and "UnknownUnknown" were
+# discovered in the data (they otherwise top dominance/feeder rankings). Key by
+# node id — labelling by name is unsafe (names are not unique at club level).
+NON_CLUB_IDS = {OUTSIDE_SYSTEM_ID, "515", "75"}  # OS1, Without Club, UnknownUnknown
 POSITIONS = [
     "Goalkeeper", "Centre-Back", "Full-Back", "Central Midfielder",
     "Attacking Mid", "Winger / Wide Attacker", "Striker",
@@ -70,6 +77,11 @@ def with_names(df: pd.DataFrame, grain: str, id_col: str = "node") -> pd.DataFra
 
 def drop_outside_system(df: pd.DataFrame, id_col: str = "node") -> pd.DataFrame:
     return df[df[id_col] != OUTSIDE_SYSTEM_ID].copy()
+
+
+def drop_non_clubs(df: pd.DataFrame, id_col: str = "node") -> pd.DataFrame:
+    """Drop all non-club pseudo-nodes (OS1, Without Club, UnknownUnknown)."""
+    return df[~df[id_col].isin(NON_CLUB_IDS)].copy()
 
 
 # --------------------------------------------------------------------------- #
@@ -840,3 +852,347 @@ def capital_asymmetry(grain: str) -> pd.DataFrame:
     t["net"] = t["revenue"] - t["spend"]
     t["gross"] = t["revenue"] + t["spend"]
     return with_names(t, grain)
+
+
+# =========================================================================== #
+# Section 4 — ALL FOUR NETWORKS COMBINED (#26-32)
+#
+# Alignment: movement runs sell->buy; finance runs buy->sell. We *reverse the
+# finance layer* so both run sell->buy (along the player path) and are directly
+# comparable. P1 tells us which movement/finance edges correspond; P2 does any
+# club->league rollup. Heavy work (multilayer #26, community #27/#29) uses
+# igraph + leidenalg/infomap and, where noted, top-N subgraphs (labelled est.).
+# =========================================================================== #
+def _aligned_agg(layer: str, grain: str) -> pd.DataFrame:
+    """Aggregated simple edges oriented **sell -> buy** with column ``w``.
+
+    Movement is already sell->buy (w = transfer count). Finance is buy->sell, so
+    we swap endpoints to align it to the player path (w = summed fee = money the
+    seller received from the buyer)."""
+    a = aggregated_edges(layer, grain).copy()
+    if layer == "finance":
+        a = a.rename(columns={"source": "target", "target": "source"})
+        a["w"] = a["fee"]
+    else:
+        a["w"] = a["n"]
+    return a[["source", "target", "w"]]
+
+
+def _igraph_from_edges(df: pd.DataFrame, weight: str = "w") -> ig.Graph:
+    """Directed weighted igraph from a (source, target, weight) frame; node
+    ``name`` attribute carries the original ids."""
+    nodes = pd.unique(pd.concat([df["source"], df["target"]], ignore_index=True))
+    idx = {n: i for i, n in enumerate(nodes)}
+    edges = list(zip(df["source"].map(idx), df["target"].map(idx)))
+    g = ig.Graph(n=len(nodes), edges=edges, directed=True)
+    g.vs["name"] = list(nodes)
+    g.es["weight"] = df[weight].to_numpy(dtype=float)
+    return g
+
+
+def _detect(g: ig.Graph, method: str, seed: int = 42):
+    """Community membership list aligned to ``g.vs``; Leiden (leidenalg, modularity)
+    or Infomap (igraph, flow-based, direction-aware)."""
+    if method == "infomap":
+        return g.community_infomap(edge_weights="weight").membership
+    part = la.find_partition(g, la.ModularityVertexPartition, weights="weight", seed=seed)
+    return part.membership
+
+
+# --------------------------------------------------------------------------- #
+# #26 Multi-layer network analysis (cross-layer centrality + versatility)
+# --------------------------------------------------------------------------- #
+@st.cache_data(show_spinner="Computing multilayer centrality…")
+def multilayer_centrality(grain: str) -> tuple[pd.DataFrame, dict]:
+    """Per-node talent vs money centrality on the **aligned** layers + versatility.
+
+    talent  = movement PageRank (as-is sell->buy) — pull as a talent destination.
+    money   = finance PageRank on the **reversed** finance layer — pull as a money
+              destination (buying power), aligned to the same orientation.
+    versatility = geometric mean of the two percentile ranks (high in *both*)."""
+    from scipy.stats import spearmanr
+
+    mv = pagerank_table("movement", grain, reverse=False)[["node", "label", "pagerank"]].rename(
+        columns={"pagerank": "talent"})
+    fn = pagerank_table("finance", grain, reverse=True)[["node", "pagerank"]].rename(
+        columns={"pagerank": "money"})
+    m = mv.merge(fn, on="node", how="outer")
+    m["talent"] = m["talent"].fillna(0.0)
+    m["money"] = m["money"].fillna(0.0)
+    m["label"] = m["label"].fillna(m["node"])
+    m["talent_pct"] = m["talent"].rank(pct=True)
+    m["money_pct"] = m["money"].rank(pct=True)
+    m["versatility"] = np.sqrt(m["talent_pct"] * m["money_pct"])
+    both = m[(m["talent"] > 0) & (m["money"] > 0)]
+    rho, p = spearmanr(both["talent"], both["money"]) if len(both) > 2 else (float("nan"), float("nan"))
+    stats = {"spearman": float(rho), "spearman_p": float(p), "n_both": int(len(both))}
+    return m.sort_values("versatility", ascending=False, ignore_index=True), stats
+
+
+# --------------------------------------------------------------------------- #
+# #27 Community detection & cross-layer comparison (club only)
+# --------------------------------------------------------------------------- #
+@st.cache_data(show_spinner="Detecting communities (both layers)…")
+def cross_layer_communities(method: str = "leiden", seed: int = 42) -> tuple[pd.DataFrame, dict]:
+    """Leiden/Infomap communities on the aligned movement and finance club graphs,
+    one row per node with both memberships (NaN if absent from a layer), plus
+    NMI/ARI on the shared nodes. Club-level only (11 leagues won't cluster)."""
+    from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
+
+    out = {}
+    for layer in ("movement", "finance"):
+        g = _igraph_from_edges(_aligned_agg(layer, "club"))
+        mem = _detect(g, method, seed)
+        out[layer] = pd.DataFrame({"node": g.vs["name"], f"{layer}_comm": mem})
+    df = out["movement"].merge(out["finance"], on="node", how="outer")
+    names = node_name_map("club")
+    df["name"] = df["node"].map(names).fillna(df["node"])
+
+    shared = df.dropna(subset=["movement_comm", "finance_comm"])
+    if len(shared) > 1:
+        nmi = float(normalized_mutual_info_score(shared["movement_comm"], shared["finance_comm"]))
+        ari = float(adjusted_rand_score(shared["movement_comm"], shared["finance_comm"]))
+    else:
+        nmi = ari = float("nan")
+    stats = {
+        "method": method, "nmi": nmi, "ari": ari, "n_shared": int(len(shared)),
+        "n_movement_comm": int(df["movement_comm"].nunique()),
+        "n_finance_comm": int(df["finance_comm"].nunique()),
+    }
+    return df, stats
+
+
+@st.cache_data(show_spinner="Building community subgraph…")
+def community_subgraph(method: str, top_n: int, seed: int = 42) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Top-``top_n`` clubs (by movement volume, OS excluded) as an induced movement
+    subgraph for a drawable community-coloured layout. Returns (nodes, edges) with
+    a spring layout and the movement-community colour."""
+    comm, _ = cross_layer_communities(method, seed)
+    rank = drop_outside_system(club_volume_ranking()).head(top_n)
+    keep = set(rank["node"])
+    agg = _aligned_agg("movement", "club")
+    sub = agg[(agg["source"].isin(keep)) & (agg["target"].isin(keep))]
+
+    G = nx.DiGraph()
+    G.add_nodes_from(keep)
+    for r in sub.itertuples(index=False):
+        G.add_edge(r.source, r.target, weight=r.w)
+    pos = nx.spring_layout(G, seed=seed, k=0.5)
+    cmap = dict(zip(comm["node"], comm["movement_comm"]))
+    names = node_name_map("club")
+    nodes = pd.DataFrame({
+        "node": list(G.nodes()),
+        "x": [pos[n][0] for n in G.nodes()],
+        "y": [pos[n][1] for n in G.nodes()],
+        "comm": [cmap.get(n, -1) for n in G.nodes()],
+        "name": [names.get(n, n) for n in G.nodes()],
+        "deg": [G.degree(n) for n in G.nodes()],
+    })
+    edges = pd.DataFrame(
+        [(pos[u][0], pos[u][1], pos[v][0], pos[v][1]) for u, v in G.edges()],
+        columns=["x0", "y0", "x1", "y1"],
+    )
+    return nodes, edges
+
+
+# --------------------------------------------------------------------------- #
+# #28 Dominance index (composite across all four nets)
+# --------------------------------------------------------------------------- #
+def _z(s: pd.Series) -> pd.Series:
+    sd = s.std(ddof=0)
+    return (s - s.mean()) / sd if sd > 0 else s * 0.0
+
+
+@st.cache_data(show_spinner="Building dominance index…")
+def dominance_index(grain: str, w_talent: float = 1.0, w_spend: float = 1.0,
+                    w_prestige: float = 1.0) -> pd.DataFrame:
+    """Composite dominance = weighted sum of z-scored components (direction-corrected):
+
+    net talent gain = movement in - out (net importer);
+    financial muscle = spend - revenue (net buyer, reversal-aware);
+    prestige = movement PageRank + reversed-finance (buying) PageRank.
+    """
+    deg = degree_table(grain)[["node", "label", "in_degree", "out_degree"]]
+    fs = finance_strength_table(grain)[["node", "spend", "revenue"]]
+    mv = pagerank_table("movement", grain, reverse=False)[["node", "pagerank"]].rename(
+        columns={"pagerank": "mv_pr"})
+    fn = pagerank_table("finance", grain, reverse=True)[["node", "pagerank"]].rename(
+        columns={"pagerank": "fn_pr"})
+    t = deg.merge(fs, on="node", how="outer").merge(mv, on="node", how="outer").merge(
+        fn, on="node", how="outer").fillna(0.0)
+    t["net_talent"] = t["in_degree"] - t["out_degree"]
+    t["muscle"] = t["spend"] - t["revenue"]
+    t["prestige"] = t["mv_pr"] + t["fn_pr"]
+    t["z_talent"] = _z(t["net_talent"])
+    t["z_muscle"] = _z(t["muscle"])
+    t["z_prestige"] = _z(t["prestige"])
+    wsum = (w_talent + w_spend + w_prestige) or 1.0
+    t["dominance"] = (w_talent * t["z_talent"] + w_spend * t["z_muscle"]
+                      + w_prestige * t["z_prestige"]) / wsum
+    t["label"] = t["label"].fillna(t["node"])
+    return t.sort_values("dominance", ascending=False, ignore_index=True)
+
+
+# --------------------------------------------------------------------------- #
+# #29 Temporal community drift (club, per season)
+# --------------------------------------------------------------------------- #
+@st.cache_data(show_spinner="Detecting communities per season…")
+def community_drift(method: str = "leiden", top_k: int = 5, min_size: int = 15,
+                    seed: int = 42) -> tuple[pd.DataFrame, dict]:
+    """Per-season Leiden/Infomap on the season's club movement graph; track the
+    ``top_k`` largest communities and give them persistent ids by greedy Jaccard
+    matching to the previous season. Returns a tidy (season, stream_id, size)
+    frame for a streamgraph + a stability stat (mean best-Jaccard)."""
+    mv = get_edges("movement_club")
+    seasons = sorted(mv["season"].dropna().unique().astype(int))
+    prev: list[set] = []           # member-sets of last season's tracked streams
+    prev_ids: list[int] = []
+    next_id = 0
+    jaccards = []
+    rows = []
+    for s in seasons:
+        grp = mv[mv["season"] == s]
+        agg = (grp.groupby(["source", "target"], observed=True).size()
+               .reset_index(name="w"))
+        if agg.empty:
+            continue
+        g = _igraph_from_edges(agg, weight="w")
+        mem = _detect(g, method, seed)
+        comm = pd.DataFrame({"node": g.vs["name"], "c": mem})
+        sizes = comm.groupby("c")["node"].agg(list)
+        big = [(c, set(v)) for c, v in sizes.items() if len(v) >= min_size]
+        big.sort(key=lambda kv: -len(kv[1]))
+        big = big[:top_k]
+
+        assigned, used = [], set()
+        for _, members in big:
+            best_j, best_i = 0.0, None
+            for i, pm in enumerate(prev):
+                if i in used:
+                    continue
+                j = len(members & pm) / len(members | pm) if (members | pm) else 0.0
+                if j > best_j:
+                    best_j, best_i = j, i
+            if best_i is not None and best_j >= 0.1:
+                sid = prev_ids[best_i]; used.add(best_i); jaccards.append(best_j)
+            else:
+                sid = next_id; next_id += 1
+            assigned.append((sid, members))
+            rows.append({"season": s, "stream_id": sid, "size": len(members)})
+        prev = [m for _, m in assigned]
+        prev_ids = [sid for sid, _ in assigned]
+    df = pd.DataFrame(rows)
+    stats = {"method": method, "n_seasons": len(seasons),
+             "n_streams": int(df["stream_id"].nunique()) if not df.empty else 0,
+             "mean_jaccard": float(np.mean(jaccards)) if jaccards else float("nan")}
+    return df, stats
+
+
+# --------------------------------------------------------------------------- #
+# #30 Shock detection & propagation
+# --------------------------------------------------------------------------- #
+@st.cache_data(show_spinner=False)
+def shock_series(grain: str, metric: str, exclude_os: bool) -> pd.DataFrame:
+    """Aggregate per-season series with a robust (median/MAD) anomaly z-score.
+
+    metric = ``volume`` (movement edges) or ``fee`` (finance €). ``exclude_os``
+    drops any edge touching OS1, since external flows can mask domestic shocks."""
+    if metric == "volume":
+        df = get_edges(f"movement_{grain}")
+        if exclude_os and grain == "club":
+            df = df[(df["source"] != OUTSIDE_SYSTEM_ID) & (df["target"] != OUTSIDE_SYSTEM_ID)]
+        s = df.groupby("season", observed=True).size().rename("value")
+    else:
+        df = get_edges(f"finance_{grain}")
+        if exclude_os and grain == "club":
+            df = df[(df["source"] != OUTSIDE_SYSTEM_ID) & (df["target"] != OUTSIDE_SYSTEM_ID)]
+        s = df.groupby("season", observed=True)["weight"].sum().rename("value")
+    t = s.reset_index()
+    t["season"] = t["season"].astype(int)
+    t = t.sort_values("season", ignore_index=True)
+    t["yoy"] = t["value"].pct_change()
+    # Detect shocks on the *detrended* series (year-on-year change): both metrics
+    # trend upward, so a robust z on the raw level misses dips like 2020. A robust
+    # (median/MAD) z on YoY surfaces change-points (e.g. the COVID fee drop).
+    y = t["yoy"]
+    med = y.median()
+    mad = (y - med).abs().median() * 1.4826
+    t["rz"] = (y - med) / mad if mad and mad > 0 else 0.0
+    return t
+
+
+@st.cache_data(show_spinner=False)
+def shock_cascade(grain: str, season: int) -> pd.DataFrame:
+    """For a flagged season, the per-node net-spend change vs the prior season —
+    a lightweight propagation view (who drove the shock)."""
+    sf = seasonal_finance(grain)
+    cur = sf[sf["season"] == season][["node", "label", "net_spend"]]
+    prev = sf[sf["season"] == season - 1][["node", "net_spend"]].rename(
+        columns={"net_spend": "prev"})
+    m = cur.merge(prev, on="node", how="left").fillna({"prev": 0.0})
+    m["delta"] = m["net_spend"] - m["prev"]
+    return m.reindex(m["delta"].abs().sort_values(ascending=False).index)
+
+
+# --------------------------------------------------------------------------- #
+# #31 Position-stratified multilayer (league × position)
+# --------------------------------------------------------------------------- #
+@st.cache_data(show_spinner=False)
+def position_league_matrix(value: str, side: str) -> pd.DataFrame:
+    """League × position matrix. ``value`` = ``volume`` (movement counts) or
+    ``fee`` (finance €). ``side`` = ``buyer`` (imports/spend) or ``seller``
+    (exports/revenue). Aligned via the finance reversal: buyer = finance source."""
+    if value == "volume":
+        df = get_edges("movement_league")
+        key = "target" if side == "buyer" else "source"   # movement: target=buyer
+        t = df.groupby([key, "position"], observed=True).size().reset_index(name="val")
+    else:
+        df = get_edges("finance_league")
+        key = "source" if side == "buyer" else "target"   # finance: source=buyer (reversal)
+        t = df.groupby([key, "position"], observed=True)["weight"].sum().reset_index(name="val")
+    t = t.rename(columns={t.columns[0]: "league"})
+    names = get_league_names()
+    t["league"] = t["league"].map(names).fillna(t["league"])
+    return t
+
+
+# --------------------------------------------------------------------------- #
+# #32 Feeder club specialisation
+# --------------------------------------------------------------------------- #
+@st.cache_data(show_spinner="Identifying feeder clubs…")
+def feeder_clubs(grain: str) -> pd.DataFrame:
+    """Per node: players sold (out-degree), net money in (revenue - spend),
+    destination concentration (Herfindahl of out-targets), modal league, and
+    the top-3 destinations. Feeder signature = sell players + net money IN."""
+    deg = degree_table(grain)[["node", "label", "out_degree", "in_degree"]]
+    fs = finance_strength_table(grain)[["node", "spend", "revenue"]]
+    edges = get_edges(f"movement_{grain}")
+    out_pairs = edges.groupby(["source", "target"], observed=True).size().reset_index(name="n")
+
+    # Herfindahl of each seller's destination distribution
+    tot = out_pairs.groupby("source", observed=True)["n"].transform("sum")
+    out_pairs["share2"] = (out_pairs["n"] / tot) ** 2
+    hhi = out_pairs.groupby("source", observed=True)["share2"].sum().rename("dest_hhi")
+
+    # top-3 destinations by volume
+    names = node_name_map(grain)
+    top_dest = (out_pairs.sort_values("n", ascending=False)
+                .groupby("source", observed=True)
+                .head(3).groupby("source", observed=True)["target"]
+                .agg(lambda s: ", ".join(names.get(x, str(x)) for x in s)).rename("top_destinations"))
+
+    t = deg.merge(fs, on="node", how="left")
+    t["node"] = t["node"].astype(str)
+    t = t.merge(hhi, left_on="node", right_index=True, how="left")
+    t = t.merge(top_dest, left_on="node", right_index=True, how="left")
+    t["net_money_in"] = t["revenue"].fillna(0.0) - t["spend"].fillna(0.0)
+    t["dest_hhi"] = t["dest_hhi"].fillna(0.0)
+
+    if grain == "club":
+        cl = club_league_by_season().groupby("club")["league"].agg(
+            lambda s: s.mode().iloc[0] if not s.mode().empty else None)
+        lnames = get_league_names()
+        t["league"] = t["node"].map(cl).map(lnames).fillna("—")
+    else:
+        t["league"] = t["label"]
+    return t
