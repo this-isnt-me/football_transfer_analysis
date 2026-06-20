@@ -25,7 +25,7 @@ from .ui import PALETTE, QUAL
 # #26 Multi-layer network analysis
 # --------------------------------------------------------------------------- #
 def render_26():
-    st.subheader("#26 — Multi-Layer Network Analysis (talent × money)")
+    st.subheader("26 · All-Round Heavyweights")
     st.caption("Cross-layer centrality on the **aligned** layers (finance reversed to "
                "sell→buy). x = talent pull (movement PageRank), y = money pull (reversed-"
                "finance PageRank). Top-right = versatile nodes central in *both*.")
@@ -64,7 +64,7 @@ def render_26():
 # #27 Community detection & cross-layer comparison (club only)
 # --------------------------------------------------------------------------- #
 def render_27():
-    st.subheader("#27 — Community Detection & Cross-Layer Comparison")
+    st.subheader("27 · Trading Circles")
     st.caption("Trading blocs of clubs, detected per layer (aligned), then compared. "
                "Club-level only. Force layout is a **top-N drawable subgraph** — the full "
                "5,598-node graph is never drawn.")
@@ -123,7 +123,7 @@ def render_27():
 # #28 Dominance index
 # --------------------------------------------------------------------------- #
 def render_28():
-    st.subheader("#28 — Dominance Index (sporting pull × financial muscle)")
+    st.subheader("28 · Overall Power Ranking")
     st.caption("Composite of z-scored components across all four nets: net talent gain "
                "(movement in−out), financial muscle (spend−revenue), prestige (movement + "
                "reversed-finance PageRank). Adjust weights to test sensitivity.")
@@ -166,7 +166,7 @@ def render_28():
 # #29 Temporal community drift (club)
 # --------------------------------------------------------------------------- #
 def render_29():
-    st.subheader("#29 — Temporal Community Drift")
+    st.subheader("29 · How Alliances Shift")
     st.caption("Community detection per season on the club movement graph; major "
                "communities tracked across seasons by Jaccard overlap. Streamgraph bands "
                "= persistent trading blocs forming, growing, splitting.")
@@ -198,7 +198,7 @@ def render_29():
 # #30 Shock detection & propagation
 # --------------------------------------------------------------------------- #
 def render_30():
-    st.subheader("#30 — Shock Detection & Propagation")
+    st.subheader("30 · Market Shocks & Crashes")
     st.caption("Anomalies on the **detrended** (year-on-year) series — both metrics trend "
                "up, so shocks like the 2020 COVID dip show in YoY, not the raw level.")
     c1, c2, c3, c4 = st.columns(4)
@@ -252,7 +252,7 @@ def render_30():
 # #31 Position-stratified multilayer (league × position)
 # --------------------------------------------------------------------------- #
 def render_31():
-    st.subheader("#31 — Position-Stratified Multilayer (league × position)")
+    st.subheader("31 · Who Rules Each Position")
     st.caption("Which leagues own which positional submarket — by **volume** (players) vs "
                "by **value** (fees). Columns normalised within each position so they sum to "
                "1 (share of that submarket).")
@@ -289,7 +289,7 @@ def render_31():
 # #32 Feeder club specialisation
 # --------------------------------------------------------------------------- #
 def render_32():
-    st.subheader("#32 — Feeder Club Specialisation")
+    st.subheader("32 · Selling & Feeder Clubs")
     st.caption("Feeder signature = sell many players (movement out) **+ net money IN** "
                "(revenue > spend). Bubble = destination concentration (Herfindahl); colour "
                "= league. Top-right with big bubbles = specialised selling/development clubs.")
@@ -325,29 +325,22 @@ def render_32():
 # Registry
 # --------------------------------------------------------------------------- #
 ANALYSES = {
-    "#26 — Multi-Layer Network Analysis": render_26,
-    "#27 — Community Detection & Cross-Layer": render_27,
-    "#28 — Dominance Index": render_28,
-    "#29 — Temporal Community Drift": render_29,
-    "#30 — Shock Detection & Propagation": render_30,
-    "#31 — Position-Stratified Multilayer": render_31,
-    "#32 — Feeder Club Specialisation": render_32,
+    "26 · All-Round Heavyweights": render_26,
+    "27 · Trading Circles": render_27,
+    "28 · Overall Power Ranking": render_28,
+    "29 · How Alliances Shift": render_29,
+    "30 · Market Shocks & Crashes": render_30,
+    "31 · Who Rules Each Position": render_31,
+    "32 · Selling & Feeder Clubs": render_32,
 }
 
 # Plain-English, one-line explanations shown above each analysis.
 EXPLAIN = {
-    "#26 — Multi-Layer Network Analysis": "Which clubs are central in both the talent market "
-        "and the money market at once — the all-round heavyweights, top-right in the chart.",
-    "#27 — Community Detection & Cross-Layer": "Natural trading blocs of clubs that frequently "
-        "do business together, and whether the money blocs line up with the player blocs.",
-    "#28 — Dominance Index": "A single combined score ranking the most dominant clubs across "
-        "talent, money and prestige. Slide the weights to emphasise what matters to you.",
-    "#29 — Temporal Community Drift": "How trading blocs form, grow, split and fade across the "
-        "seasons — each coloured band is a persistent group of clubs.",
-    "#30 — Shock Detection & Propagation": "Seasons where the market suddenly jumped or crashed "
-        "(like the 2020 COVID dip), and which clubs drove the change.",
-    "#31 — Position-Stratified Multilayer": "Which leagues dominate the market for each "
-        "position — measured both by number of players and by money spent.",
-    "#32 — Feeder Club Specialisation": "'Feeder' clubs that develop and sell players for "
-        "profit, how concentrated their sales are, and where they tend to sell.",
+    "26 · All-Round Heavyweights": "Which clubs are central to both the talent market and the money market at the same time.",
+    "27 · Trading Circles": "The natural groups of clubs that trade together a lot, and whether the money groups match the player groups.",
+    "28 · Overall Power Ranking": "A single, adjustable score ranking the most dominant clubs across talent, money and prestige.",
+    "29 · How Alliances Shift": "How groups of frequently-trading clubs form, grow, split and fade across the seasons.",
+    "30 · Market Shocks & Crashes": "Seasons where the market suddenly surged or crashed, and which clubs drove the swing.",
+    "31 · Who Rules Each Position": "Which leagues dominate the market for each position, by both player numbers and money spent.",
+    "32 · Selling & Feeder Clubs": "Which clubs specialise in developing and selling players for profit, and where they tend to sell them.",
 }

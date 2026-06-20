@@ -27,7 +27,7 @@ from .ui import PALETTE
 # #19 Player flow vs money flow
 # --------------------------------------------------------------------------- #
 def render_19():
-    st.subheader("#19 — Player Flow vs Money Flow (per corridor)")
+    st.subheader("19 · Players Moved vs Money Spent")
     st.caption("Players moved vs money moved per directed corridor (sell → buy). "
                "Top-left = high-volume / low-value feeder pipelines; bottom-right = "
                "low-volume / high-value marquee corridors. Log–log; counts include all "
@@ -68,7 +68,7 @@ def render_19():
 # #20 Fee per player (edge-level efficiency)
 # --------------------------------------------------------------------------- #
 def render_20():
-    st.subheader("#20 — Fee Per Player (edge-level efficiency)")
+    st.subheader("20 · Who Sells the Priciest Players")
     st.caption("Median fee per individual deal (P1). High = quality-over-quantity "
                "sellers/corridors; low = feeders. NULL-fee moves excluded from the median.")
     grain = ui.grain_control("20")
@@ -107,7 +107,7 @@ def render_20():
 # #21 Prestige divergence
 # --------------------------------------------------------------------------- #
 def render_21():
-    st.subheader("#21 — Prestige Divergence (talent magnet vs cash magnet)")
+    st.subheader("21 · Talent Magnets vs Cash Magnets")
     st.caption("Gap between movement-PageRank rank and finance-PageRank rank, with "
                "aligned semantics. Large positive gap = high sporting prestige at modest "
                "fees; large negative = pure cash extractor.")
@@ -149,7 +149,7 @@ def render_21():
 # #22 Positional fee efficiency over time
 # --------------------------------------------------------------------------- #
 def render_22():
-    st.subheader("#22 — Positional Fee Efficiency Over Time")
+    st.subheader("22 · Position Price Trends")
     st.caption("Median fee per player by position × season (P1). Reveals positional "
                "inflation cycles. Fees nominal — no deflation applied.")
     grain = ui.grain_control("22", default="league")
@@ -178,7 +178,7 @@ def render_22():
 # #23 Window arbitrage
 # --------------------------------------------------------------------------- #
 def render_23():
-    st.subheader("#23 — Window Arbitrage (Summer vs Winter)")
+    st.subheader("23 · The January Price Premium")
     st.caption("Fee-per-player differences by window, controlled for position (like for "
                "like). The January premium/discount.")
     grain = ui.grain_control("23")
@@ -207,7 +207,7 @@ def render_23():
 # #24 Motif analysis
 # --------------------------------------------------------------------------- #
 def render_24():
-    st.subheader("#24 — Motif Analysis (directed triad significance)")
+    st.subheader("24 · Repeating Trade Patterns")
     st.caption("Directed triad census of the aggregated movement graph vs a "
                "degree-preserving random null. Positive z = over-represented motif "
                "(talent escalators 030T, recycling loops 030C, cliques 300).")
@@ -257,7 +257,7 @@ def render_24():
 # #25 Capital flow asymmetry by position
 # --------------------------------------------------------------------------- #
 def render_25():
-    st.subheader("#25 — Capital Flow Asymmetry by Position")
+    st.subheader("25 · Where Clubs Earn & Spend")
     st.caption("Net money per node × position = revenue (sold) − spend (bought). "
                "Red = net spender on that position, blue = net earner. Reveals "
                "'sell expensive strikers, buy cheap defenders' patterns.")
@@ -288,31 +288,22 @@ def render_25():
 # Registry
 # --------------------------------------------------------------------------- #
 ANALYSES = {
-    "#19 — Player Flow vs Money Flow": render_19,
-    "#20 — Fee Per Player": render_20,
-    "#21 — Prestige Divergence": render_21,
-    "#22 — Positional Fee Efficiency / Time": render_22,
-    "#23 — Window Arbitrage": render_23,
-    "#24 — Motif Analysis": render_24,
-    "#25 — Capital Flow Asymmetry / Position": render_25,
+    "19 · Players Moved vs Money Spent": render_19,
+    "20 · Who Sells the Priciest Players": render_20,
+    "21 · Talent Magnets vs Cash Magnets": render_21,
+    "22 · Position Price Trends": render_22,
+    "23 · The January Price Premium": render_23,
+    "24 · Repeating Trade Patterns": render_24,
+    "25 · Where Clubs Earn & Spend": render_25,
 }
 
 # Plain-English, one-line explanations shown above each analysis.
 EXPLAIN = {
-    "#19 — Player Flow vs Money Flow": "For each trading route between two clubs, how many "
-        "players moved versus how much money changed hands — feeder pipelines (many players, "
-        "little money) versus marquee corridors (few players, big money).",
-    "#20 — Fee Per Player": "Which clubs or routes command the highest average fee per player "
-        "— quality over quantity. Free/loan moves are left out of the averages.",
-    "#21 — Prestige Divergence": "Clubs that attract top talent but don't command top fees, or "
-        "the reverse — talent magnets versus cash magnets.",
-    "#22 — Positional Fee Efficiency / Time": "How the typical fee for each position has risen "
-        "or fallen over the years.",
-    "#23 — Window Arbitrage": "Whether the same kind of player costs more in the winter window "
-        "than in the summer — the January premium.",
-    "#24 — Motif Analysis": "Recurring three-club trading patterns — e.g. talent 'escalators' "
-        "where players step up club to club, or money-recycling loops — compared against what "
-        "random chance would produce.",
-    "#25 — Capital Flow Asymmetry / Position": "For each club, which positions it makes money "
-        "on versus spends money on — e.g. 'sell expensive strikers, buy cheap defenders'.",
+    "19 · Players Moved vs Money Spent": "For each route between two clubs, how many players moved compared with how much money changed hands.",
+    "20 · Who Sells the Priciest Players": "Which clubs and routes sell the priciest players on average.",
+    "21 · Talent Magnets vs Cash Magnets": "Clubs that attract top talent without commanding top fees — and the reverse.",
+    "22 · Position Price Trends": "How the typical fee for each position has risen or fallen over the years.",
+    "23 · The January Price Premium": "Whether the same kind of player costs more in the winter window than in summer.",
+    "24 · Repeating Trade Patterns": "Common three-club trading patterns, like talent ladders where players step up from club to club.",
+    "25 · Where Clubs Earn & Spend": "For each club, which positions it earns money on and which it spends money on.",
 }

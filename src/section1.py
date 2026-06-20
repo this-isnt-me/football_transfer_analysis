@@ -27,7 +27,7 @@ from .ui import PALETTE
 # #1 In/Out-Degree
 # --------------------------------------------------------------------------- #
 def render_01():
-    st.subheader("#1 — In / Out-Degree")
+    st.subheader("1 · Buyers vs Sellers")
     st.caption("Movement: out-degree = players sold, in-degree = players recruited. "
                "Net importers (above the diagonal) vs net exporters (below).")
     grain = ui.grain_control("01")
@@ -67,7 +67,7 @@ def render_01():
 # #2 Weighted PageRank (movement)
 # --------------------------------------------------------------------------- #
 def render_02():
-    st.subheader("#2 — Weighted PageRank (movement)")
+    st.subheader("2 · Most In-Demand Destinations")
     st.caption("Talent-pull hierarchy. As-is: prestige of **destinations** (where "
                "players go). Reversed: prestige as a **seller**. Parallel edges are "
                "aggregated to transfer counts first.")
@@ -92,7 +92,7 @@ def render_02():
 # #3 Betweenness (club only, approximate)
 # --------------------------------------------------------------------------- #
 def render_03():
-    st.subheader("#3 — Betweenness Centrality (brokers)")
+    st.subheader("3 · Transfer Middlemen")
     st.warning("Club-level only and **approximate** — Brandes with k pivot sources "
                "on hop-distance. Read as ranks, not exact values.", icon="⚠️")
     c1, c2, c3 = st.columns(3)
@@ -115,7 +115,7 @@ def render_03():
 # #4 Position-filtered subgraph (heatmap)
 # --------------------------------------------------------------------------- #
 def render_04():
-    st.subheader("#4 — Position-Filtered Volume (club × position)")
+    st.subheader("4 · Position Specialists")
     st.caption("Specialisation by position. Heatmap of transfer counts; clubs as rows.")
     grain = ui.grain_control("04")
     c1, c2, c3 = st.columns(3)
@@ -145,7 +145,7 @@ def render_04():
 # #5 Reciprocity
 # --------------------------------------------------------------------------- #
 def render_05():
-    st.subheader("#5 — Reciprocity")
+    st.subheader("5 · Trading Partners")
     st.caption("Share of edges with a reciprocal partner — repeat trading corridors / swaps.")
     grain = ui.grain_control("05")
     c1, c2 = st.columns(2)
@@ -183,7 +183,7 @@ def render_05():
 # #6 Seasonal degree evolution
 # --------------------------------------------------------------------------- #
 def render_06():
-    st.subheader("#6 — Seasonal Degree Evolution")
+    st.subheader("6 · Activity Over the Years")
     grain = ui.grain_control("06")
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -217,7 +217,7 @@ def render_06():
 # #7 Window comparison
 # --------------------------------------------------------------------------- #
 def render_07():
-    st.subheader("#7 — Transfer Window Comparison (Summer vs Winter)")
+    st.subheader("7 · Summer vs Winter Activity")
     grain = ui.grain_control("07")
     c1, c2 = st.columns(2)
     with c1:
@@ -242,7 +242,7 @@ def render_07():
 # #8 Position supply trends over time
 # --------------------------------------------------------------------------- #
 def render_08():
-    st.subheader("#8 — Position Supply Trends Over Time")
+    st.subheader("8 · Changing Demand by Position")
     st.caption("Movement volume per position per season (weight = supply).")
     grain = ui.grain_control("08", default="league")
     ps = M.position_supply(grain)
@@ -263,7 +263,7 @@ def render_08():
 # #9 Out/In-Strength (finance reversal)
 # --------------------------------------------------------------------------- #
 def render_09():
-    st.subheader("#9 — Out / In-Strength (spend vs revenue)")
+    st.subheader("9 · Spenders vs Earners")
     st.caption("**Finance reversal:** out-strength = spend (money paid), "
                "in-strength = revenue (money received); net profit = revenue − spend.")
     grain = ui.grain_control("09")
@@ -315,7 +315,7 @@ def render_09():
 # #10 Flow concentration (Gini / Lorenz)
 # --------------------------------------------------------------------------- #
 def render_10():
-    st.subheader("#10 — Flow Concentration (Gini / Lorenz)")
+    st.subheader("10 · How Lopsided the Market Is")
     st.caption("Inequality of flow across nodes. Expect movement < finance "
                "(money is far more concentrated than players).")
     grain = ui.grain_control("10")
@@ -350,7 +350,7 @@ def render_10():
 # #11 Weighted PageRank on finance
 # --------------------------------------------------------------------------- #
 def render_11():
-    st.subheader("#11 — Weighted PageRank on Finance")
+    st.subheader("11 · Money Power Players")
     st.caption("Finance edges run buyer → seller. As-is: **selling power** "
                "(extracting big fees from wealthy buyers). Reversed: buying/spending prestige.")
     grain = ui.grain_control("11")
@@ -373,7 +373,7 @@ def render_11():
 # #12 Seasonal spending trajectory
 # --------------------------------------------------------------------------- #
 def render_12():
-    st.subheader("#12 — Seasonal Spending Trajectory")
+    st.subheader("12 · Spending Over the Years")
     st.caption("Per-node spend / revenue across seasons. Fees are nominal — "
                "compare trends, not absolute eras (no deflation applied).")
     grain = ui.grain_control("12")
@@ -400,7 +400,7 @@ def render_12():
 # #13 Winter vs Summer financial comparison
 # --------------------------------------------------------------------------- #
 def render_13():
-    st.subheader("#13 — Winter vs Summer Financial Comparison")
+    st.subheader("13 · When Clubs Spend Big")
     grain = ui.grain_control("13")
     fe = M.fee_edges(grain)
     c1, c2 = st.columns(2)
@@ -426,7 +426,7 @@ def render_13():
 # #14 Position-based valuation
 # --------------------------------------------------------------------------- #
 def render_14():
-    st.subheader("#14 — Position-Based Valuation")
+    st.subheader("14 · Which Positions Cost Most")
     st.caption("Fee distribution by position (median-sorted). Fees right-skewed → "
                "box/violin on a log scale; report medians.")
     grain = ui.grain_control("14")
@@ -452,7 +452,7 @@ def render_14():
 # #15 Squad rebuilding ego-net (the one node-link drawing)
 # --------------------------------------------------------------------------- #
 def render_15():
-    st.subheader("#15 — Squad Rebuilding (ego-network)")
+    st.subheader("15 · One Club's Transfer Window")
     st.caption("A single club's buys (in) and sells (out) for one window. "
                "Edge colour = position, width = fee (via the P1 transfer_id join). "
                "This is the only full node-link drawing in Section 1.")
@@ -533,55 +533,38 @@ def render_15():
 # Registry
 # --------------------------------------------------------------------------- #
 ANALYSES = {
-    "#1 — In/Out-Degree": render_01,
-    "#2 — Weighted PageRank (movement)": render_02,
-    "#3 — Betweenness Centrality": render_03,
-    "#4 — Position-Filtered Subgraph": render_04,
-    "#5 — Reciprocity": render_05,
-    "#6 — Seasonal Degree Evolution": render_06,
-    "#7 — Window Comparison": render_07,
-    "#8 — Position Supply Trends": render_08,
-    "#9 — Out/In-Strength": render_09,
-    "#10 — Flow Concentration (Gini)": render_10,
-    "#11 — Finance PageRank": render_11,
-    "#12 — Seasonal Spending Trajectory": render_12,
-    "#13 — Winter vs Summer Financial": render_13,
-    "#14 — Position-Based Valuation": render_14,
-    "#15 — Squad Rebuilding (ego-net)": render_15,
+    "1 · Buyers vs Sellers": render_01,
+    "2 · Most In-Demand Destinations": render_02,
+    "3 · Transfer Middlemen": render_03,
+    "4 · Position Specialists": render_04,
+    "5 · Trading Partners": render_05,
+    "6 · Activity Over the Years": render_06,
+    "7 · Summer vs Winter Activity": render_07,
+    "8 · Changing Demand by Position": render_08,
+    "9 · Spenders vs Earners": render_09,
+    "10 · How Lopsided the Market Is": render_10,
+    "11 · Money Power Players": render_11,
+    "12 · Spending Over the Years": render_12,
+    "13 · When Clubs Spend Big": render_13,
+    "14 · Which Positions Cost Most": render_14,
+    "15 · One Club's Transfer Window": render_15,
 }
 
 # Plain-English, one-line explanations shown above each analysis.
 EXPLAIN = {
-    "#1 — In/Out-Degree": "How many players each club sells (out) versus signs (in). "
-        "Clubs above the diagonal buy more than they sell; below it, they're net sellers.",
-    "#2 — Weighted PageRank (movement)": "Which clubs are the most prestigious destinations "
-        "in the transfer market — where talented players tend to end up, counting not just how "
-        "many arrive but how important the clubs they came from are.",
-    "#3 — Betweenness Centrality": "Which clubs act as middlemen or stepping-stones — players "
-        "often pass through them on the way between other clubs.",
-    "#4 — Position-Filtered Subgraph": "Which clubs trade most in each playing position — e.g. "
-        "who buys and sells the most strikers, defenders or goalkeepers.",
-    "#5 — Reciprocity": "How often two clubs trade players in both directions — repeat trading "
-        "partnerships and swap deals.",
-    "#6 — Seasonal Degree Evolution": "How each club's transfer activity (players in or out) "
-        "has risen or fallen, season by season.",
-    "#7 — Window Comparison": "How much business each club does in the summer window versus "
-        "the winter window.",
-    "#8 — Position Supply Trends": "How the mix of positions being transferred has changed "
-        "over the years.",
-    "#9 — Out/In-Strength": "How much each club spends on signings versus earns from sales, "
-        "and whether it's a net spender or a net seller.",
-    "#10 — Flow Concentration (Gini)": "How evenly players and money are spread across clubs. "
-        "A higher score means a handful of clubs dominate — money is usually far more "
-        "concentrated than players.",
-    "#11 — Finance PageRank": "Which clubs are most central to the flow of money — the big "
-        "earners who sell to wealthy buyers (or, reversed, the big spenders).",
-    "#12 — Seasonal Spending Trajectory": "How each club's spending or earning has changed "
-        "across the seasons.",
-    "#13 — Winter vs Summer Financial": "Whether clubs spend more, and pay higher fees, in "
-        "the summer window or the winter window.",
-    "#14 — Position-Based Valuation": "Which playing positions command the highest transfer "
-        "fees. We show the median (the typical deal) because a few mega-fees skew the average.",
-    "#15 — Squad Rebuilding (ego-net)": "A picture of one club's incoming and outgoing "
-        "transfers in a single window — line colour is the position, line thickness is the fee.",
+    "1 · Buyers vs Sellers": "Whether each club signs more players than it sells, or the other way around.",
+    "2 · Most In-Demand Destinations": "Which clubs are the most sought-after destinations once you account for how important their feeder clubs are.",
+    "3 · Transfer Middlemen": "Which clubs act as stepping-stones that players pass through between bigger moves.",
+    "4 · Position Specialists": "Which clubs do the most buying and selling in each position, from goalkeepers to strikers.",
+    "5 · Trading Partners": "Which pairs of clubs regularly trade players with each other in both directions.",
+    "6 · Activity Over the Years": "How busy each club has been in the transfer market, season by season.",
+    "7 · Summer vs Winter Activity": "Whether a club does most of its business in the summer or the winter window.",
+    "8 · Changing Demand by Position": "How the mix of positions being bought and sold has shifted over the years.",
+    "9 · Spenders vs Earners": "How much each club pays out for signings versus brings in from sales, and whether it lands in profit.",
+    "10 · How Lopsided the Market Is": "Whether players and money are spread fairly across clubs or dominated by a powerful few.",
+    "11 · Money Power Players": "Which clubs sit at the centre of the money flow — the big earners selling to wealthy buyers.",
+    "12 · Spending Over the Years": "How each club's spending and earning have risen or fallen across the seasons.",
+    "13 · When Clubs Spend Big": "Whether clubs spend more, and pay higher fees, in the summer or the winter window.",
+    "14 · Which Positions Cost Most": "Which positions command the biggest transfer fees.",
+    "15 · One Club's Transfer Window": "A clear picture of one club's signings and sales in a single window, with bigger fees drawn as thicker lines.",
 }

@@ -25,7 +25,7 @@ from .ui import PALETTE
 # #16 Aggregation consistency check (P2 reconciliation)
 # --------------------------------------------------------------------------- #
 def render_16():
-    st.subheader("#16 — Aggregation Consistency Check (validates P2)")
+    st.subheader("16 · Data Health Check")
     st.caption("Relabel each club edge's endpoints with their (season, window) league "
                "via P2, sum by (source league, target league, season, window, position), "
                "and diff against the league network. A clean P2 makes every cell zero.")
@@ -98,7 +98,7 @@ _METRICS = {
 
 
 def render_17():
-    st.subheader("#17 — Node Ranking Correlation (broad-based vs star-carried)")
+    st.subheader("17 · Powered by Many or a Few?")
     st.caption("Each league's standing measured two ways: directly on the 11-node "
                "league network, vs the membership-weighted rollup of its member clubs' "
                "metric. A tight diagonal = scale-consistent; off-diagonal leagues are "
@@ -148,7 +148,7 @@ _CONC = {"top_share": "Top-club share", "hhi": "HHI", "gini": "Gini"}
 
 
 def render_18():
-    st.subheader("#18 — Temporal Divergence Between Scales")
+    st.subheader("18 · League Growth vs Top-Club Grip")
     st.caption("League-scale total vs within-league concentration, per season. The classic "
                "pattern: flat/falling league total while concentration rises = rich-get-richer "
                "*inside* the league. Shaded seasons = the two trajectories move opposite ways.")
@@ -203,20 +203,14 @@ def render_18():
 # Registry
 # --------------------------------------------------------------------------- #
 ANALYSES = {
-    "#16 — Aggregation Consistency (P2 check)": render_16,
-    "#17 — Node Ranking Correlation": render_17,
-    "#18 — Temporal Divergence Between Scales": render_18,
+    "16 · Data Health Check": render_16,
+    "17 · Powered by Many or a Few?": render_17,
+    "18 · League Growth vs Top-Club Grip": render_18,
 }
 
 # Plain-English, one-line explanations shown above each analysis.
 EXPLAIN = {
-    "#16 — Aggregation Consistency (P2 check)": "A data-quality check: it confirms that adding "
-        "up every club-by-club transfer correctly reproduces the league-level totals. All-zero "
-        "means the two views agree perfectly.",
-    "#17 — Node Ranking Correlation": "Whether a league's standing comes from many solid clubs "
-        "or is carried by one or two giants. Points off the diagonal are leagues that look very "
-        "different as a whole than the sum of their clubs.",
-    "#18 — Temporal Divergence Between Scales": "Whether a league's overall activity and how "
-        "concentrated it is among its top clubs move together or drift apart over time — the "
-        "classic 'rich get richer inside the league' pattern.",
+    "16 · Data Health Check": "A behind-the-scenes check that the club-by-club figures add up exactly to the league totals.",
+    "17 · Powered by Many or a Few?": "Whether a league's strength comes from many solid clubs or rests on just one or two giants.",
+    "18 · League Growth vs Top-Club Grip": "Whether a league's overall activity and the grip of its biggest clubs move together or pull apart over time.",
 }
