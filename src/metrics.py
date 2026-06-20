@@ -1196,3 +1196,94 @@ def feeder_clubs(grain: str) -> pd.DataFrame:
     else:
         t["league"] = t["label"]
     return t
+
+
+# =========================================================================== #
+# Section 5 — TEMPORAL LEAGUE-LEVEL SANKEYS (#33-37)
+#
+# State-transition Sankey: one node per (league, stage); stages are the ordered
+# (season, window) windows. A window's transfers are the transition stage t ->
+# t+1. Aggregate by groupby(season, window, source_league, target_league) summing
+# weight (player counts for movement, fees for finance) — transfer_id not needed.
+# Movement follows the PLAYER (selling league -> buying league); finance is shown
+# AS-IS, following the MONEY (paying/buyer league -> receiving/seller league), so
+# the two diagrams are deliberately mirrored.
+# =========================================================================== #
+WINDOW_ORDER = {"summer": 0, "winter": 1}
+
+
+@st.cache_data(show_spinner=False)
+def sankey_stages() -> pd.DataFrame:
+    """Ordered (season, window) stages with an integer ``stage`` index and label."""
+    mv = get_edges("movement_league")[["season", "window"]].dropna().drop_duplicates()
+    mv["season"] = mv["season"].astype(int)
+    mv["wo"] = mv["window"].map(WINDOW_ORDER)
+    mv = mv.sort_values(["season", "wo"]).reset_index(drop=True)
+    mv["stage"] = range(len(mv))
+    mv["label"] = mv["window"].str.capitalize() + " " + mv["season"].astype(str)
+    return mv[["stage", "season", "window", "label"]]
+
+
+@st.cache_data(show_spinner="Aggregating league flows…")
+def sankey_flows(layer: str) -> pd.DataFrame:
+    """Per (stage, source_league, target_league) flow weight for one layer.
+
+    Movement weight = player count (transfers); finance weight = summed fee.
+    ``stage`` is the ordered (season, window) index from :func:`sankey_stages`.
+    Orientation is the raw edge orientation: movement = seller->buyer (player
+    path); finance = buyer->seller (money path), shown as-is."""
+    df = get_edges(f"{layer}_league").dropna(subset=["season", "window", "source", "target"])
+    g = df.groupby(["season", "window", "source", "target"], observed=True)
+    agg = (g.size().reset_index(name="weight") if layer == "movement"
+           else g["weight"].sum().reset_index())
+    agg["season"] = agg["season"].astype(int)
+    stages = sankey_stages()[["season", "window", "stage", "label"]]
+    agg = agg.merge(stages, on=["season", "window"], how="left")
+    return agg[["stage", "label", "source", "target", "weight"]]
+
+
+def _in_out_per_league_stage(df: pd.DataFrame) -> pd.DataFrame:
+    """From a (stage, source, target, weight) flow frame, per (league, stage)
+    total outflow (as source) and inflow (as target)."""
+    out = (df.groupby(["stage", "source"], observed=True)["weight"].sum()
+           .reset_index().rename(columns={"source": "league", "weight": "out"}))
+    inn = (df.groupby(["stage", "target"], observed=True)["weight"].sum()
+           .reset_index().rename(columns={"target": "league", "weight": "in"}))
+    return out.merge(inn, on=["stage", "league"], how="outer").fillna(0.0)
+
+
+@st.cache_data(show_spinner=False)
+def league_net_flows() -> pd.DataFrame:
+    """Per (league, stage): net players (movement in − out) and net money
+    (finance revenue − spend) — the numeric companion to the #37 comparison.
+
+    Movement: out = league as seller (source), in = as buyer (target).
+    Finance (reversal): out = as buyer/payer (source) = spend, in = as seller (target) = revenue."""
+    stages = sankey_stages()[["stage", "label", "season", "window"]]
+    mvt = _in_out_per_league_stage(sankey_flows("movement")).rename(
+        columns={"out": "players_out", "in": "players_in"})
+    fnt = _in_out_per_league_stage(sankey_flows("finance")).rename(
+        columns={"out": "spend", "in": "revenue"})
+    t = mvt.merge(fnt, on=["stage", "league"], how="outer").fillna(0.0)
+    t["net_players"] = t["players_in"] - t["players_out"]      # movement: in − out
+    t["net_money"] = t["revenue"] - t["spend"]                 # finance: revenue − spend
+    names = get_league_names()
+    t = t.merge(stages, on="stage", how="left")
+    t["league_name"] = t["league"].map(names).fillna(t["league"])
+    return t
+
+
+# Stable, plotly-free league palette (consistent colours across both Sankeys).
+_LEAGUE_PALETTE = [
+    "#2E91E5", "#E15F99", "#1CA71C", "#FB0D0D", "#DA16FF", "#222A2A",
+    "#B68100", "#750D86", "#EB663B", "#511CFB", "#00A08B",
+]
+
+
+def league_color_map() -> dict[str, str]:
+    """Stable league_id -> colour, consistent across both Sankeys."""
+    ids = sorted(get_league_names())
+    cmap = {lid: _LEAGUE_PALETTE[i % len(_LEAGUE_PALETTE)] for i, lid in enumerate(ids)}
+    cmap[OUTSIDE_SYSTEM_ID] = "#9e9e9e"   # OS parked in neutral grey
+    cmap["Other"] = "#d0d0d0"
+    return cmap
