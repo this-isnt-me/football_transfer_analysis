@@ -26,6 +26,7 @@ from .data_layer import (
     get_edges,
     get_graph,
     get_league_names,
+    get_p1,
     get_p2,
     node_names,
     p2_violations,
@@ -617,3 +618,225 @@ def temporal_divergence(league_id: str, metric: str, concentration: str) -> tupl
     stats = {"spearman": float(rho), "spearman_p": float(p),
              "n_seasons": int(len(valid)), "n_divergent": int(df["divergent"].sum())}
     return df, stats
+
+
+# =========================================================================== #
+# Section 3 — cross-network, same granularity: MOVEMENT vs FINANCE via P1
+#
+# P1 attaches each deal's fee to its movement edge by transfer_id. The movement
+# corridor is (sell=source, buy=target); finance runs (buy, sell), so the join
+# already aligns the flip. The ~22k unmatched moves carry NULL fee — pandas
+# median/mean skip NaN, so fee stats exclude them automatically (never zeroed),
+# while player counts include every move.
+# =========================================================================== #
+def _label_corridor(df: pd.DataFrame, grain: str) -> pd.DataFrame:
+    """Attach ``source_label`` / ``target_label`` / ``corridor`` and an OS flag."""
+    names = node_name_map(grain)
+    out = df.copy()
+    for end in ("source", "target"):
+        nm = out[end].map(names).fillna(out[end])
+        out[f"{end}_label"] = nm + " [" + out[end].astype(str) + "]" if grain == "club" else nm
+    out["corridor"] = out["source_label"] + " → " + out["target_label"]
+    if grain == "club":
+        out["os_involved"] = (out["source"] == OUTSIDE_SYSTEM_ID) | (out["target"] == OUTSIDE_SYSTEM_ID)
+    else:
+        out["os_involved"] = False
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# #19 Player flow vs money flow (per corridor)
+# --------------------------------------------------------------------------- #
+@st.cache_data(show_spinner="Aggregating corridors (P1)…")
+def corridor_flow_money(grain: str) -> pd.DataFrame:
+    """Per movement corridor ``(sell, buy)``: player count (all moves) vs money
+    (summed/median matched fee). Money excludes NULL-fee moves; counts include all."""
+    p1 = get_p1(grain)
+    g = p1.groupby(["source", "target"], observed=True)
+    out = g.agg(
+        n_players=("transfer_id", "size"),
+        n_paid=("matched", "sum"),
+        total_fee=("fee", "sum"),
+        median_fee=("fee", "median"),
+    ).reset_index()
+    out["n_paid"] = out["n_paid"].astype(int)
+    out["total_fee"] = out["total_fee"].fillna(0.0)
+    return _label_corridor(out, grain)
+
+
+# --------------------------------------------------------------------------- #
+# #20 Fee per player (edge-level efficiency)
+# --------------------------------------------------------------------------- #
+@st.cache_data(show_spinner=False)
+def fee_per_player(grain: str, by: str = "corridor", min_deals: int = 3) -> pd.DataFrame:
+    """Median fee per deal grouped by corridor / seller / buyer (matched deals only).
+
+    ``min_deals`` filters out thin groups whose median is noise. Median (not mean)
+    per the skew rule; the ~22k NULL-fee moves never enter the stat."""
+    matched = get_p1(grain)
+    matched = matched[matched["matched"]]
+    if by == "corridor":
+        keys = ["source", "target"]
+    elif by == "seller":
+        keys = ["source"]
+    else:  # buyer
+        keys = ["target"]
+    g = matched.groupby(keys, observed=True)
+    out = g.agg(median_fee=("fee", "median"), mean_fee=("fee", "mean"),
+                n_deals=("fee", "size"), total_fee=("fee", "sum")).reset_index()
+    out = out[out["n_deals"] >= min_deals]
+    if by == "corridor":
+        return _label_corridor(out, grain)
+    out = out.rename(columns={keys[0]: "node"})
+    out["node"] = out["node"].astype(str)
+    res = with_names(out, grain)
+    res["os_involved"] = res["node"] == OUTSIDE_SYSTEM_ID if grain == "club" else False
+    return res
+
+
+@st.cache_data(show_spinner=False)
+def matched_fees(grain: str) -> pd.Series:
+    """All per-deal matched fees (for the #20 distribution histogram)."""
+    p1 = get_p1(grain)
+    return p1.loc[p1["matched"], "fee"].dropna()
+
+
+# --------------------------------------------------------------------------- #
+# #21 Prestige divergence (movement-PR rank vs finance-PR rank)
+# --------------------------------------------------------------------------- #
+@st.cache_data(show_spinner="Computing prestige divergence…")
+def prestige_divergence(grain: str, lens: str = "selling") -> tuple[pd.DataFrame, dict]:
+    """Rank gap between movement- and finance-PageRank with aligned semantics.
+
+    ``selling``: reversed movement (selling prestige) vs as-is finance (selling power).
+    ``buying`` : as-is movement (destination pull) vs reversed finance (buying prestige).
+    Returns ``(frame, stats)``; ``rank_gap`` = movement_rank − finance_rank (large
+    positive ⇒ talent magnet that is not a cash magnet)."""
+    from scipy.stats import spearmanr
+
+    if lens == "selling":
+        mv = pagerank_table("movement", grain, reverse=True)
+        fn = pagerank_table("finance", grain, reverse=False)
+    else:
+        mv = pagerank_table("movement", grain, reverse=False)
+        fn = pagerank_table("finance", grain, reverse=True)
+    mv = mv[["node", "label", "pagerank"]].rename(columns={"pagerank": "mv_pr"})
+    fn = fn[["node", "pagerank"]].rename(columns={"pagerank": "fn_pr"})
+    m = mv.merge(fn, on="node", how="inner")
+    m["mv_rank"] = m["mv_pr"].rank(ascending=False, method="min").astype(int)
+    m["fn_rank"] = m["fn_pr"].rank(ascending=False, method="min").astype(int)
+    m["rank_gap"] = m["mv_rank"] - m["fn_rank"]
+    m["abs_gap"] = m["rank_gap"].abs()
+    rho, p = spearmanr(m["mv_pr"], m["fn_pr"])
+    stats = {"spearman": float(rho), "spearman_p": float(p), "n": int(len(m))}
+    return m.sort_values("mv_rank", ignore_index=True), stats
+
+
+# --------------------------------------------------------------------------- #
+# #22 Positional fee efficiency over time
+# --------------------------------------------------------------------------- #
+@st.cache_data(show_spinner=False)
+def positional_fee_time(grain: str) -> pd.DataFrame:
+    """Median fee per ``(position, season)`` from matched deals (P1)."""
+    p1 = get_p1(grain)
+    m = p1[p1["matched"]].dropna(subset=["position", "season"])
+    med = (m.groupby(["position", "season"], observed=True)["fee"]
+           .median().reset_index().rename(columns={"fee": "median_fee"}))
+    med["season"] = med["season"].astype(int)
+    return med
+
+
+# --------------------------------------------------------------------------- #
+# #23 Window arbitrage
+# --------------------------------------------------------------------------- #
+@st.cache_data(show_spinner=False)
+def window_fee(grain: str) -> pd.DataFrame:
+    """Matched per-deal fees with window/position/season (for #23 paired boxes)."""
+    p1 = get_p1(grain)
+    m = p1[p1["matched"]].dropna(subset=["window"])
+    return m[["window", "position", "season", "fee"]].copy()
+
+
+# --------------------------------------------------------------------------- #
+# #24 Motif analysis (directed triad census + null-model z-scores)
+# --------------------------------------------------------------------------- #
+# Connected directed triads (drop the empty/dyadic 003/012/102) with readable names.
+TRIAD_NAMES = {
+    "021D": "021D out-star", "021U": "021U in-star", "021C": "021C chain",
+    "111D": "111D", "111U": "111U", "030T": "030T feed-forward",
+    "030C": "030C 3-cycle", "120D": "120D", "120U": "120U", "120C": "120C",
+    "210": "210", "300": "300 clique",
+}
+
+
+@st.cache_data(show_spinner="Computing triad census + null model…")
+def triad_profile(grain: str, top_k: int = 60, n_null: int = 20, seed: int = 42) -> tuple[pd.DataFrame, dict]:
+    """Directed triad census of the aggregated movement graph, with z-scores vs a
+    degree-preserving null (random edge swaps).
+
+    League (11 nodes): full enumeration. Club: restricted to the ``top_k`` most
+    active nodes (by total transfer volume) — full club enumeration is too
+    expensive — and the result is labelled an estimate."""
+    agg = aggregated_edges("movement", grain)
+    G = _digraph(agg, "n")
+    sampled = False
+    if grain == "club":
+        deg = degree_table("club")
+        deg = drop_outside_system(deg)
+        deg["total"] = deg["in_degree"] + deg["out_degree"]
+        keep = set(deg.nlargest(top_k, "total")["node"])
+        G = G.subgraph(keep).copy()
+        sampled = True
+    # Triads are defined on distinct nodes — self-loops (intra-league / intra-club
+    # transfers collapsed onto one node) are not part of any triad.
+    G.remove_edges_from(list(nx.selfloop_edges(G)))
+
+    obs = nx.triadic_census(G)
+    rng = np.random.default_rng(seed)
+    n_edges = G.number_of_edges()
+    null_rows = []
+    for i in range(n_null):
+        R = G.copy()
+        try:
+            nx.directed_edge_swap(R, nswap=max(1, 2 * n_edges),
+                                  max_tries=20 * n_edges, seed=int(rng.integers(1 << 31)))
+        except (nx.NetworkXError, nx.NetworkXAlgorithmError):
+            pass  # graph too small/constrained to swap; null ≈ observed for that draw
+        null_rows.append(nx.triadic_census(R))
+    nulldf = pd.DataFrame(null_rows)
+
+    rows = []
+    for code, label in TRIAD_NAMES.items():
+        o = float(obs.get(code, 0))
+        mu = float(nulldf[code].mean()) if code in nulldf else 0.0
+        sd = float(nulldf[code].std(ddof=1)) if code in nulldf else 0.0
+        z = (o - mu) / sd if sd > 0 else 0.0
+        rows.append({"triad": code, "label": label, "observed": o,
+                     "null_mean": mu, "null_std": sd, "z": z})
+    prof = pd.DataFrame(rows)
+    meta = {"n_nodes": G.number_of_nodes(), "n_edges": n_edges,
+            "sampled": sampled, "top_k": top_k if sampled else None, "n_null": n_null}
+    return prof, meta
+
+
+# --------------------------------------------------------------------------- #
+# #25 Capital flow asymmetry by position
+# --------------------------------------------------------------------------- #
+@st.cache_data(show_spinner="Computing capital-flow asymmetry…")
+def capital_asymmetry(grain: str) -> pd.DataFrame:
+    """Per ``(node, position)`` net money = revenue (sold) − spend (bought), from
+    matched deals. Positive ⇒ net earner in that position; negative ⇒ net spender.
+
+    Finance reversal handled via the movement orientation: in a movement edge the
+    source SOLD (receives fee = revenue), the target BOUGHT (pays fee = spend)."""
+    p1 = get_p1(grain)
+    m = p1[p1["matched"]].dropna(subset=["position"])
+    revenue = (m.groupby(["source", "position"], observed=True)["fee"].sum()
+               .rename("revenue").rename_axis(["node", "position"]))
+    spend = (m.groupby(["target", "position"], observed=True)["fee"].sum()
+             .rename("spend").rename_axis(["node", "position"]))
+    t = pd.concat([revenue, spend], axis=1).fillna(0.0).reset_index()
+    t["node"] = t["node"].astype(str)
+    t["net"] = t["revenue"] - t["spend"]
+    t["gross"] = t["revenue"] + t["spend"]
+    return with_names(t, grain)
