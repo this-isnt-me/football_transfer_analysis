@@ -296,3 +296,23 @@ ANALYSES = {
     "#24 — Motif Analysis": render_24,
     "#25 — Capital Flow Asymmetry / Position": render_25,
 }
+
+# Plain-English, one-line explanations shown above each analysis.
+EXPLAIN = {
+    "#19 — Player Flow vs Money Flow": "For each trading route between two clubs, how many "
+        "players moved versus how much money changed hands — feeder pipelines (many players, "
+        "little money) versus marquee corridors (few players, big money).",
+    "#20 — Fee Per Player": "Which clubs or routes command the highest average fee per player "
+        "— quality over quantity. Free/loan moves are left out of the averages.",
+    "#21 — Prestige Divergence": "Clubs that attract top talent but don't command top fees, or "
+        "the reverse — talent magnets versus cash magnets.",
+    "#22 — Positional Fee Efficiency / Time": "How the typical fee for each position has risen "
+        "or fallen over the years.",
+    "#23 — Window Arbitrage": "Whether the same kind of player costs more in the winter window "
+        "than in the summer — the January premium.",
+    "#24 — Motif Analysis": "Recurring three-club trading patterns — e.g. talent 'escalators' "
+        "where players step up club to club, or money-recycling loops — compared against what "
+        "random chance would produce.",
+    "#25 — Capital Flow Asymmetry / Position": "For each club, which positions it makes money "
+        "on versus spends money on — e.g. 'sell expensive strikers, buy cheap defenders'.",
+}

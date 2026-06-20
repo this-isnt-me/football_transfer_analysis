@@ -333,3 +333,21 @@ ANALYSES = {
     "#31 — Position-Stratified Multilayer": render_31,
     "#32 — Feeder Club Specialisation": render_32,
 }
+
+# Plain-English, one-line explanations shown above each analysis.
+EXPLAIN = {
+    "#26 — Multi-Layer Network Analysis": "Which clubs are central in both the talent market "
+        "and the money market at once — the all-round heavyweights, top-right in the chart.",
+    "#27 — Community Detection & Cross-Layer": "Natural trading blocs of clubs that frequently "
+        "do business together, and whether the money blocs line up with the player blocs.",
+    "#28 — Dominance Index": "A single combined score ranking the most dominant clubs across "
+        "talent, money and prestige. Slide the weights to emphasise what matters to you.",
+    "#29 — Temporal Community Drift": "How trading blocs form, grow, split and fade across the "
+        "seasons — each coloured band is a persistent group of clubs.",
+    "#30 — Shock Detection & Propagation": "Seasons where the market suddenly jumped or crashed "
+        "(like the 2020 COVID dip), and which clubs drove the change.",
+    "#31 — Position-Stratified Multilayer": "Which leagues dominate the market for each "
+        "position — measured both by number of players and by money spent.",
+    "#32 — Feeder Club Specialisation": "'Feeder' clubs that develop and sell players for "
+        "profit, how concentrated their sales are, and where they tend to sell.",
+}

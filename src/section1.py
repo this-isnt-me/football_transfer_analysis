@@ -549,3 +549,39 @@ ANALYSES = {
     "#14 — Position-Based Valuation": render_14,
     "#15 — Squad Rebuilding (ego-net)": render_15,
 }
+
+# Plain-English, one-line explanations shown above each analysis.
+EXPLAIN = {
+    "#1 — In/Out-Degree": "How many players each club sells (out) versus signs (in). "
+        "Clubs above the diagonal buy more than they sell; below it, they're net sellers.",
+    "#2 — Weighted PageRank (movement)": "Which clubs are the most prestigious destinations "
+        "in the transfer market — where talented players tend to end up, counting not just how "
+        "many arrive but how important the clubs they came from are.",
+    "#3 — Betweenness Centrality": "Which clubs act as middlemen or stepping-stones — players "
+        "often pass through them on the way between other clubs.",
+    "#4 — Position-Filtered Subgraph": "Which clubs trade most in each playing position — e.g. "
+        "who buys and sells the most strikers, defenders or goalkeepers.",
+    "#5 — Reciprocity": "How often two clubs trade players in both directions — repeat trading "
+        "partnerships and swap deals.",
+    "#6 — Seasonal Degree Evolution": "How each club's transfer activity (players in or out) "
+        "has risen or fallen, season by season.",
+    "#7 — Window Comparison": "How much business each club does in the summer window versus "
+        "the winter window.",
+    "#8 — Position Supply Trends": "How the mix of positions being transferred has changed "
+        "over the years.",
+    "#9 — Out/In-Strength": "How much each club spends on signings versus earns from sales, "
+        "and whether it's a net spender or a net seller.",
+    "#10 — Flow Concentration (Gini)": "How evenly players and money are spread across clubs. "
+        "A higher score means a handful of clubs dominate — money is usually far more "
+        "concentrated than players.",
+    "#11 — Finance PageRank": "Which clubs are most central to the flow of money — the big "
+        "earners who sell to wealthy buyers (or, reversed, the big spenders).",
+    "#12 — Seasonal Spending Trajectory": "How each club's spending or earning has changed "
+        "across the seasons.",
+    "#13 — Winter vs Summer Financial": "Whether clubs spend more, and pay higher fees, in "
+        "the summer window or the winter window.",
+    "#14 — Position-Based Valuation": "Which playing positions command the highest transfer "
+        "fees. We show the median (the typical deal) because a few mega-fees skew the average.",
+    "#15 — Squad Rebuilding (ego-net)": "A picture of one club's incoming and outgoing "
+        "transfers in a single window — line colour is the position, line thickness is the fee.",
+}

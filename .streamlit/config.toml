@@ -1,0 +1,8 @@
+# Brand theme — see src/theme.py for the matching CSS / Plotly template.
+[theme]
+base = "dark"
+primaryColor = "#007480"            # teal highlight (widgets, accents)
+backgroundColor = "#111214"         # app background (dark)
+secondaryBackgroundColor = "#1A1C20" # bento card / sidebar surface
+textColor = "#E8E6E3"
+font = "sans serif"

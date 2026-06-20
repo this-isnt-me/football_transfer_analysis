@@ -162,7 +162,7 @@ def _net_flow_smallmultiples(lo: int, hi: int, include_os: bool):
                                          "net_money_n": "net money"})
     fig = px.line(tidy.sort_values("stage"), x="stage", y="value", color="metric",
                   facet_col="league_name", facet_col_wrap=3, markers=True,
-                  color_discrete_sequence=["#2E91E5", "#E15F99"],
+                  color_discrete_sequence=["#33A0AC", "#D1B49C"],
                   title="Net flow per league per window (normalised: net players vs net money)")
     fig.add_hline(y=0, line_color="#bbb", line_width=1)
     fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
@@ -175,6 +175,14 @@ def _net_flow_smallmultiples(lo: int, hi: int, include_os: bool):
 # Page render
 # --------------------------------------------------------------------------- #
 def render():
+    st.markdown(
+        "<div class='layman'><b>In plain English —</b> these flow maps (Sankey diagrams) "
+        "trace transfers between leagues over time. The <b>movement</b> map follows the "
+        "<i>players</i> (from the selling league to the buying league); the <b>finance</b> map "
+        "follows the <i>money</i> (from the paying league to the receiving league) — so the two "
+        "are mirror images. Thicker ribbons mean bigger flows.</div>",
+        unsafe_allow_html=True,
+    )
     stages = M.sankey_stages()
     labels = stages["label"].tolist()
     n = len(labels)

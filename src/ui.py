@@ -17,10 +17,13 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from . import metrics as M
+from . import theme
 
-# Qualitative palettes shared by every section.
-PALETTE = px.colors.qualitative.Safe
-QUAL = px.colors.qualitative.Dark24
+# Brand colourways shared by every section (see src/theme.py). Brand-led, but
+# extended to >=12 legible-on-dark hues so high-cardinality charts still
+# differentiate. Importing theme also activates the dark Plotly template.
+PALETTE = theme.COLORWAY
+QUAL = theme.COLORWAY
 
 
 # --------------------------------------------------------------------------- #
@@ -100,12 +103,19 @@ def top_nodes_by(df, value, n, *, group=("node", "label"), use_abs=False):
 # --------------------------------------------------------------------------- #
 # Page boilerplate
 # --------------------------------------------------------------------------- #
-def section_page(page_title: str, title: str, caption: str, analyses: dict, key: str):
-    """Standard multipage entry: page config, title/caption, sidebar analysis
-    picker, then dispatch to the chosen ``render_*`` function."""
-    st.set_page_config(page_title=page_title, page_icon="⚽", layout="wide")
+def section_page(page_title: str, title: str, caption: str, analyses: dict, key: str,
+                 explain: dict | None = None):
+    """Standard multipage entry: page config + brand chrome, title/caption,
+    sidebar analysis picker, a plain-English callout, then dispatch to the
+    chosen ``render_*`` function."""
+    icon = str(theme.LOGO) if theme.LOGO.exists() else "⚽"
+    st.set_page_config(page_title=page_title, page_icon=icon, layout="wide")
+    theme.apply_chrome()
     st.title(title)
     st.caption(caption)
-    choice = st.sidebar.radio("Analysis", list(analyses.keys()), key=key)
+    choice = st.sidebar.radio("Pick an analysis", list(analyses.keys()), key=key)
     st.divider()
+    if explain and choice in explain:
+        st.markdown(f"<div class='layman'><b>In plain English —</b> {explain[choice]}</div>",
+                    unsafe_allow_html=True)
     analyses[choice]()

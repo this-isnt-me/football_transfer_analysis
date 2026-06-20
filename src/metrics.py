@@ -1273,11 +1273,10 @@ def league_net_flows() -> pd.DataFrame:
     return t
 
 
-# Stable, plotly-free league palette (consistent colours across both Sankeys).
-_LEAGUE_PALETTE = [
-    "#2E91E5", "#E15F99", "#1CA71C", "#FB0D0D", "#DA16FF", "#222A2A",
-    "#B68100", "#750D86", "#EB663B", "#511CFB", "#00A08B",
-]
+# Stable, brand league palette (consistent colours across both Sankeys).
+from . import theme as _theme
+
+_LEAGUE_PALETTE = list(_theme.LEAGUE_PALETTE)
 
 
 def league_color_map() -> dict[str, str]:

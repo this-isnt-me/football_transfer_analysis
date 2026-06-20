@@ -207,3 +207,16 @@ ANALYSES = {
     "#17 — Node Ranking Correlation": render_17,
     "#18 — Temporal Divergence Between Scales": render_18,
 }
+
+# Plain-English, one-line explanations shown above each analysis.
+EXPLAIN = {
+    "#16 — Aggregation Consistency (P2 check)": "A data-quality check: it confirms that adding "
+        "up every club-by-club transfer correctly reproduces the league-level totals. All-zero "
+        "means the two views agree perfectly.",
+    "#17 — Node Ranking Correlation": "Whether a league's standing comes from many solid clubs "
+        "or is carried by one or two giants. Points off the diagonal are leagues that look very "
+        "different as a whole than the sum of their clubs.",
+    "#18 — Temporal Divergence Between Scales": "Whether a league's overall activity and how "
+        "concentrated it is among its top clubs move together or drift apart over time — the "
+        "classic 'rich get richer inside the league' pattern.",
+}

@@ -9,6 +9,7 @@ The 37 analyses live on the five section pages (see the sidebar).
 import pandas as pd
 import streamlit as st
 
+from src import theme
 from src.data_layer import (
     NETWORKS,
     get_all_graphs,
@@ -21,16 +22,24 @@ from src.data_layer import (
 )
 
 st.set_page_config(
-    page_title="Transfer Network Analysis",
-    page_icon="⚽",
+    page_title="Football Transfer Network Analysis",
+    page_icon=str(theme.LOGO) if theme.LOGO.exists() else "⚽",
     layout="wide",
 )
+theme.apply_chrome()
 
 st.title("⚽ Football Transfer Network Analysis")
 st.caption(
-    "Four directed multigraphs of football transfers — player movement and money "
-    "flow, at club and league scale. This app implements 37 analyses across 5 "
-    "sections (sidebar); this page shows the shared data layer and its health check."
+    "Four networks of football transfers — players moving and money flowing, at club "
+    "and league scale. Explore 37 ready-made analyses from the sidebar. This home page "
+    "is a quick overview of the data and a health check that the numbers tie up."
+)
+st.markdown(
+    "<div class='layman'><b>New here?</b> Use the sidebar to jump in — "
+    "<b>Club &amp; League Profiles</b> for the basics (who buys, sells, spends and earns), "
+    "<b>Players vs Money</b> to compare talent with cash, and <b>Transfer Flow Maps</b> for "
+    "the big animated picture of players moving between leagues.</div>",
+    unsafe_allow_html=True,
 )
 
 # --------------------------------------------------------------------------- #
