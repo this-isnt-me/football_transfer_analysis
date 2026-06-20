@@ -129,7 +129,7 @@ def render_04():
 
     pv = M.position_volume(grain, side=side)
     if grain == "club" and excl:
-        pv = M.drop_outside_system(pv)
+        pv = M.drop_non_clubs(pv)
     sub = ui.top_nodes_by(pv, "count", n)
     mat = sub.pivot_table(index="label", columns="position", values="count",
                           fill_value=0, aggfunc="sum").reindex(columns=M.POSITIONS, fill_value=0)
@@ -194,7 +194,7 @@ def render_06():
         excl = ui.exclude_os("06", grain)
     sd = M.seasonal_degree(grain, side=side)
     if grain == "club" and excl:
-        sd = M.drop_outside_system(sd)
+        sd = M.drop_non_clubs(sd)
 
     if grain == "league":
         fig = px.line(sd.sort_values("season"), x="season", y="degree", color="label",
@@ -226,7 +226,7 @@ def render_07():
         excl = ui.exclude_os("07", grain)
     wv = M.window_volume(grain)
     if grain == "club" and excl:
-        wv = M.drop_outside_system(wv)
+        wv = M.drop_non_clubs(wv)
     sub = ui.top_nodes_by(wv, "count", n if grain == "club" else 11)
     fig = px.bar(sub, x="label", y="count", color="window", barmode="group",
                  title=f"Summer vs Winter outgoing volume — top {sub['node'].nunique()} {grain}s",
@@ -324,8 +324,8 @@ def render_10():
     deg = M.degree_table(grain)
     fs = M.finance_strength_table(grain)
     if grain == "club" and excl:
-        deg = M.drop_outside_system(deg)
-        fs = M.drop_outside_system(fs)
+        deg = M.drop_non_clubs(deg)
+        fs = M.drop_non_clubs(fs)
 
     series = {
         "Movement out-degree": deg["out_degree"].to_numpy(),
@@ -386,7 +386,7 @@ def render_12():
         excl = ui.exclude_os("12", grain)
     sf = M.seasonal_finance(grain)
     if grain == "club" and excl:
-        sf = M.drop_outside_system(sf)
+        sf = M.drop_non_clubs(sf)
     sub = ui.top_nodes_by(sf, metric, n if grain == "club" else 11, use_abs=True).copy()
     sub[metric + "_m"] = sub[metric] / 1e6
     fig = px.line(sub.sort_values("season"), x="season", y=metric + "_m", color="label",
@@ -457,7 +457,7 @@ def render_15():
                "Edge colour = position, width = fee (via the P1 transfer_id join). "
                "This is the only full node-link drawing in Section 1.")
     ranking = M.club_volume_ranking()
-    ranking = M.drop_outside_system(ranking)
+    ranking = M.drop_non_clubs(ranking)
     top = ranking.head(60)
     c1, c2, c3 = st.columns([2, 1, 1])
     with c1:

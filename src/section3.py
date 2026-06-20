@@ -122,7 +122,7 @@ def render_21():
         n = st.slider("Top-X divergent", 5, 30, 15, key="n21")
     df, stats = M.prestige_divergence(grain, lens)
     if grain == "club":
-        df = M.drop_outside_system(df)
+        df = M.drop_non_clubs(df)
 
     st.metric("Spearman ρ (movement-PR vs finance-PR)", f"{stats['spearman']:.3f}",
               help=f"p = {stats['spearman_p']:.3g}; n = {stats['n']}")
@@ -266,7 +266,7 @@ def render_25():
     ca = M.capital_asymmetry(grain)
     if grain == "club":
         if st.checkbox("Exclude Outside System (OS1)", value=True, key="os25"):
-            ca = M.drop_outside_system(ca)
+            ca = M.drop_non_clubs(ca)
     totals = ca.groupby(["node", "label"], observed=True)["gross"].sum().reset_index()
     keep = totals.nlargest(n if grain == "club" else 11, "gross")["node"]
     sub = ca[ca["node"].isin(keep)].copy()

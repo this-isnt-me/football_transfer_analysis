@@ -82,9 +82,10 @@ with col1:
         and rep["unmatched_fee_all_null"]
         and rep["n_fee_equals_zero"] == 0
     )
-    st.success("Reversal invariant holds; missing fees are NULL, never 0.") if ok else (
+    if ok:
+        st.success("Reversal invariant holds; missing fees are NULL, never 0.")
+    else:
         st.error(f"P1 invariant FAILED: {rep}")
-    )
 
 with col2:
     st.markdown("**P2 — time-dependent club → league mapping**")

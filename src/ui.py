@@ -40,11 +40,12 @@ def topx(key: str, default: int = 20, lo: int = 5, hi: int = 40) -> int:
 
 
 def exclude_os(key: str, grain: str, default: bool = True, *,
-               label: str = "Exclude Outside System (OS1) from rankings",
+               label: str = "Exclude non-club nodes (OS1, Without Club, UnknownUnknown)",
                help: str | None = (
-                   "OS1 is the single external-clubs catch-all node; it dominates volume "
-                   "and is shown separately rather than ranked beside real clubs.")) -> bool:
-    """Outside-System exclusion checkbox (club grain only; False otherwise).
+                   "OS1 (external clubs), Without Club (free agency) and UnknownUnknown are "
+                   "catch-all pseudo-nodes — they otherwise top club rankings. Excluded by "
+                   "default and shown separately rather than ranked beside real clubs.")) -> bool:
+    """Non-club-node exclusion checkbox (club grain only; False otherwise).
 
     ``label`` / ``help`` are overridable so call sites keep their exact wording.
     Key namespaced ``os_<key>``."""
@@ -54,10 +55,13 @@ def exclude_os(key: str, grain: str, default: bool = True, *,
 
 
 def maybe_drop_os(df, grain, exclude, id_col="node"):
-    """Return ``(ranked_without_os, os_row)``; no-op (empty os_row) off club grain."""
+    """Return ``(ranked_without_pseudo_nodes, os_row)``; drops all catch-all
+    pseudo-nodes (OS1, Without Club, UnknownUnknown) for consistency with the
+    rest of the app, and surfaces the OS1 row for the reference caption. No-op
+    (empty os_row) off club grain."""
     if grain == "club" and exclude:
         os_row = df[df[id_col] == M.OUTSIDE_SYSTEM_ID]
-        return M.drop_outside_system(df, id_col), os_row
+        return M.drop_non_clubs(df, id_col), os_row
     return df, df.iloc[0:0]
 
 

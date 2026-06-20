@@ -1,14 +1,20 @@
 # CLAUDE.md
 
 Guidance for Claude Code when working in this repository. The standing rules below apply
-on **every** turn. The phased build tasks live in `build-playbook.md` — work through them
-in order, one at a time.
+on **every** turn. The phased build in `build-playbook.md` is **complete** — all 37
+analyses across 5 sections are implemented; treat the playbook as history, not a to-do.
+
+## Status & running the app
+
+All 37 analyses are built (Phases 1–6) and a QA pass is done. Run with
+`streamlit run Home.py` (venv active). See `README.md` for setup, layout, the full
+list of approximations, and the data-quality flags. `pytest` runs 39 data-layer tests.
 
 ## What this repository is
 
-A data-analysis project on football transfer networks. It currently contains the input
-datasets (`data/`) and a detailed analytical specification (`transfer_network_analysis_guide.md`
-plus its companion display spec). The goal is a **Streamlit analytics app** implementing
+A data-analysis project on football transfer networks. It contains the input
+datasets (`data/`), a detailed analytical specification (`transfer_network_analysis_guide.md`
+plus its companion display spec), and the finished **Streamlit analytics app** implementing
 the 37 numbered analyses across 5 sections. Treat the guide as the authoritative
 requirements document and the display spec as the authority on presentation; reference
 analyses by their numbers.
