@@ -153,8 +153,45 @@ aligned comparative view.
 
 ---
 
-## Phase 7 — Polish & QA pass
+## Phase 7 — Refactor & consolidate
 
+```
+The app was built section-by-section over six phases, so expect accumulated duplication:
+repeated aggregation/groupby logic, near-identical page boilerplate, copy-pasted chart
+styling, the throwaway Phase 0 exploration script, and overlapping metric helpers. Clean
+this up without changing any analysis output.
+
+Do a behaviour-preserving refactor of the whole app. Outputs must stay identical — verify
+by re-running, not by assuming.
+
+First, INVENTORY before changing anything:
+- List every file and its responsibility. Flag dead/throwaway files (e.g. the Phase 0
+  exploration script), unused modules, and unused imports/dependencies.
+- Identify duplicated logic across pages: aggregation/groupby patterns, the P1 join, P2
+  rollups, top-X selection, Outside-System handling, finance-reversal direction flips, and
+  repeated chart styling (ranked bars, scatters, heatmaps, box/violin, Sankey).
+
+Then propose a consolidation plan and show it to me BEFORE deleting or moving files:
+- Single-source the shared logic: all P1/P2 and aggregation in the data layer; all metrics
+  in the metrics module; a small shared UI/plotting helper module for the recurring chart
+  types and the club/league + top-X controls.
+- Combine trivially small or redundant page files within a section where it reads better;
+  keep pages thin (fetch from cached layers, call a helper, render).
+- Move any keep-worthy scripts (e.g. data exploration) into a scripts/ folder; delete true
+  throwaways.
+- Prune requirements.txt to what's actually imported.
+
+After I approve, apply the plan, then RE-RUN the app and the P1/P2 tests and confirm every
+page renders the same output as before. Commit as a single "refactor" commit and give me a
+before/after file tree with a one-line note on what each change consolidated.
+```
+
+
+**Checkpoint:** consolidation plan approved before changes; post-refactor app and tests
+pass with identical output; before/after file tree delivered.
+
+
+## Phase 8 — Polish & QA pass
 ```
 Do a final QA and polish pass across the whole app:
 - Click through every page; confirm nothing errors and all caches behave.
@@ -165,7 +202,8 @@ Do a final QA and polish pass across the whole app:
 
 Give me a final summary: what's implemented, what's approximate or sampled, and every
 data-quality flag you hit during the build.
+
+Checkpoint: full click-through is clean; summary of coverage, approximations, and
+data flags delivered.
 ```
 
-**Checkpoint:** full click-through is clean; summary of coverage, approximations, and
-data flags delivered.
