@@ -191,7 +191,10 @@ def render_23():
     st.plotly_chart(fig, width="stretch")
 
     med = (wf.groupby(["position", "window"], observed=True)["fee"].median() / 1e6).unstack()
-    med["winter − summer"] = med.get("winter") - med.get("summer")
+    for w in ("summer", "winter"):                 # filter may leave only one window
+        if w not in med.columns:
+            med[w] = np.nan
+    med["winter − summer"] = med["winter"] - med["summer"]
     med = med.reindex(order)
     st.dataframe(med.round(2).reset_index(), hide_index=True, width="stretch")
     overall = wf.groupby("window", observed=True)["fee"].median() / 1e6

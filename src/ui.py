@@ -93,13 +93,44 @@ def top_nodes_by(df, value, n, *, group=("node", "label"), use_abs=False):
 
 
 # --------------------------------------------------------------------------- #
+# Sidebar edge-filters (apply to every analysis on the page)
+# --------------------------------------------------------------------------- #
+def sidebar_filters():
+    """Render the season / window / position filters in the sidebar and stash the
+    selection in ``st.session_state['edge_filter']``. Defaults select everything
+    (a no-op = full graph). When the selection changes we clear the data caches
+    so every cached metric recomputes on the newly sliced data."""
+    lo0, hi0 = M.season_bounds()
+    with st.sidebar:
+        with st.expander("🔎 Filter the data", expanded=False):
+            st.caption("Narrow the transfers feeding every chart on this page. "
+                       "Defaults show everything.")
+            yr = st.slider("Seasons (year)", lo0, hi0, (lo0, hi0), key="flt_season",
+                           help="Keep only transfers from these seasons.")
+            wins = st.multiselect("Transfer window", M.WINDOWS, default=M.WINDOWS,
+                                  format_func=str.capitalize, key="flt_windows",
+                                  help="Summer and/or winter windows.")
+            poss = st.multiselect("Player position", M.POSITIONS, default=M.POSITIONS,
+                                  key="flt_positions", help="Keep only these positions.")
+            st.caption("Filters persist as you navigate; they do not affect the "
+                       "Transfer Flow Maps.")
+    st.session_state["edge_filter"] = {
+        "season": yr, "season_full": (lo0, hi0), "windows": wins, "positions": poss,
+    }
+    key = (tuple(yr), tuple(sorted(wins)), tuple(sorted(poss)))
+    if st.session_state.get("_filter_key") != key:
+        st.cache_data.clear()                # selection changed -> recompute on sliced data
+        st.session_state["_filter_key"] = key
+
+
+# --------------------------------------------------------------------------- #
 # Page boilerplate
 # --------------------------------------------------------------------------- #
 def section_page(page_title: str, title: str, caption: str, analyses: dict, key: str,
                  explain: dict | None = None):
     """Standard multipage entry: page config + brand chrome, title/caption,
-    sidebar analysis picker, a plain-English callout, then dispatch to the
-    chosen ``render_*`` function."""
+    sidebar analysis picker + data filters, a plain-English callout, then dispatch
+    to the chosen ``render_*`` function (guarded against empty/over-filtered data)."""
     icon = str(theme.LOGO) if theme.LOGO.exists() else "⚽"
     st.set_page_config(page_title=page_title, page_icon=icon, layout="wide")
     theme.apply_chrome()
@@ -111,8 +142,25 @@ def section_page(page_title: str, title: str, caption: str, analyses: dict, key:
         "reflect genuine club-to-club activity. They stay visible in **Transfer Flow Maps**."
     )
     choice = st.sidebar.radio("Pick an analysis", list(analyses.keys()), key=key)
+    sidebar_filters()
     st.divider()
     if explain and choice in explain:
         st.markdown(f"<div class='layman'><b>In plain English —</b> {explain[choice]}</div>",
                     unsafe_allow_html=True)
-    analyses[choice]()
+
+    # Safeguard 1: the filters can empty the graph entirely.
+    if not M.any_edges():
+        st.warning("**No transfers match the current filters.** Widen the year range, "
+                   "window or position selection in the sidebar to see this analysis.",
+                   icon="🔎")
+        return
+    # Safeguard 2: a very narrow slice can leave a graph too sparse/disconnected for
+    # a particular algorithm. Catch it, log it for devs, and guide the user.
+    try:
+        analyses[choice]()
+    except Exception:  # noqa: BLE001 - last-resort guard against filter-induced edge cases
+        import traceback
+        traceback.print_exc()
+        st.warning("**This view couldn't be built for the current filter selection** — "
+                   "there may be too few transfers (e.g. a single window and position in "
+                   "one season). Try widening the filters in the sidebar.", icon="⚠️")

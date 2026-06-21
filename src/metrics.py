@@ -98,18 +98,88 @@ def drop_non_clubs(df: pd.DataFrame, id_col: str = "node") -> pd.DataFrame:
 # are club-level ids), so this drops the Outside-System league and leaves the
 # ten real leagues.
 # --------------------------------------------------------------------------- #
+# --- Interactive sidebar edge-filters -------------------------------------- #
+# Users can slice every analysis by the three edge attributes present on ALL
+# four networks (100% coverage): season (year), transfer window, and player
+# position. The selection lives in ``st.session_state['edge_filter']`` (written
+# by ``ui.sidebar_filters``); ``active_filter`` resolves it to a hashable tuple
+# where a dimension is None when it covers everything — so the default "all"
+# selection is a true no-op and the graph renders fully. The sidebar clears the
+# data caches whenever the selection changes, so every cached metric recomputes
+# on the sliced data.
+WINDOWS = ["summer", "winter"]
+
+
 @st.cache_data(show_spinner=False)
-def club_edges(name: str) -> pd.DataFrame:
-    """Edge frame with non-club catch-all endpoints removed (see module note)."""
+def season_bounds() -> tuple[int, int]:
+    """(min, max) season across the data — drives the year-range slider."""
+    s = pd.to_numeric(_raw_get_edges("movement_club")["season"], errors="coerce").dropna()
+    return int(s.min()), int(s.max())
+
+
+def active_filter():
+    """Sidebar selection as a hashable ``(season|None, windows|None, positions|None)``
+    or ``None`` when nothing is constrained (default = full data)."""
+    try:
+        fs = st.session_state.get("edge_filter")
+    except Exception:        # no Streamlit session (tests / scripts) -> no filtering
+        return None
+    if not fs:
+        return None
+    lo, hi = fs["season"]
+    flo, fhi = fs["season_full"]
+    season = None if (lo <= flo and hi >= fhi) else (int(lo), int(hi))
+    wins = fs.get("windows") or []
+    wins = None if set(wins) >= set(WINDOWS) else tuple(sorted(wins))
+    poss = fs.get("positions") or []
+    poss = None if set(poss) >= set(POSITIONS) else tuple(sorted(poss))
+    if season is None and wins is None and poss is None:
+        return None
+    return (season, wins, poss)
+
+
+def _apply_filter(df: pd.DataFrame, flt) -> pd.DataFrame:
+    if flt is None:
+        return df
+    season, wins, poss = flt
+    if season is not None:
+        df = df[(df["season"] >= season[0]) & (df["season"] <= season[1])]
+    if wins is not None:
+        df = df[df["window"].isin(wins)]
+    if poss is not None:
+        df = df[df["position"].isin(poss)]
+    return df
+
+
+@st.cache_data(show_spinner=False)
+def _club_edges(name: str, flt) -> pd.DataFrame:
     df = _raw_get_edges(name)
-    return df[~df["source"].isin(NON_CLUB_IDS) & ~df["target"].isin(NON_CLUB_IDS)].copy()
+    df = df[~df["source"].isin(NON_CLUB_IDS) & ~df["target"].isin(NON_CLUB_IDS)]
+    return _apply_filter(df, flt).copy()
+
+
+def club_edges(name: str) -> pd.DataFrame:
+    """Club-only edges (non-club catch-alls removed) further sliced by the active
+    sidebar filter. The single data tap for all 32 analyses (Sankeys + #16 keep
+    the raw data via ``_raw_get_edges``)."""
+    return _club_edges(name, active_filter())
 
 
 @st.cache_data(show_spinner=False)
-def club_p1(level: str = "club") -> pd.DataFrame:
-    """P1 deal join with non-club endpoints removed (see :func:`club_edges`)."""
+def _club_p1(level: str, flt) -> pd.DataFrame:
     p1 = _raw_get_p1(level)
-    return p1[~p1["source"].isin(NON_CLUB_IDS) & ~p1["target"].isin(NON_CLUB_IDS)].copy()
+    p1 = p1[~p1["source"].isin(NON_CLUB_IDS) & ~p1["target"].isin(NON_CLUB_IDS)]
+    return _apply_filter(p1, flt).copy()
+
+
+def club_p1(level: str = "club") -> pd.DataFrame:
+    """P1 deal join (non-club removed) sliced by the active sidebar filter."""
+    return _club_p1(level, active_filter())
+
+
+def any_edges() -> bool:
+    """True if the current filter leaves any club-to-club transfers to analyse."""
+    return len(club_edges("movement_club")) > 0 or len(club_edges("movement_league")) > 0
 
 
 # --------------------------------------------------------------------------- #
@@ -163,6 +233,10 @@ def pagerank_table(layer: str, grain: str, reverse: bool = False) -> pd.DataFram
     G = _digraph(aggregated_edges(layer, grain), weight_col)
     if reverse:
         G = G.reverse(copy=True)
+    if G.number_of_nodes() == 0:                       # filter left no edges
+        t = with_names(pd.DataFrame({"node": [], "pagerank": []}), grain)
+        t["rank"] = pd.Series(dtype=int)
+        return t
     pr = nx.pagerank(G, weight=weight_col)
     t = pd.DataFrame({"node": list(pr.keys()), "pagerank": list(pr.values())})
     t = with_names(t, grain).sort_values("pagerank", ascending=False, ignore_index=True)
@@ -186,9 +260,10 @@ def betweenness_table(k: int = 500, seed: int = 42) -> pd.DataFrame:
     connected component, so we compute it on the **largest weakly-connected
     component**; clubs outside it score 0 by construction and are dropped."""
     G = _digraph(aggregated_edges("movement", "club"), "n")
-    if G.number_of_nodes():
-        lcc = max(nx.weakly_connected_components(G), key=len)
-        G = G.subgraph(lcc).copy()
+    if G.number_of_nodes() == 0:                       # filter left no edges
+        return with_names(pd.DataFrame({"node": [], "betweenness": []}), "club")
+    lcc = max(nx.weakly_connected_components(G), key=len)
+    G = G.subgraph(lcc).copy()
     k = min(k, G.number_of_nodes())
     bc = nx.betweenness_centrality(G, k=k, seed=seed, weight=None, normalized=True)
     t = pd.DataFrame({"node": list(bc.keys()), "betweenness": list(bc.values())})
@@ -842,6 +917,14 @@ def triad_profile(grain: str, top_k: int = 60, n_null: int = 20, seed: int = 42)
     # transfers collapsed onto one node) are not part of any triad.
     G.remove_edges_from(list(nx.selfloop_edges(G)))
 
+    if G.number_of_nodes() < 3:                        # too few nodes after filtering
+        prof = pd.DataFrame([{"triad": c, "label": lbl, "observed": 0.0,
+                              "null_mean": 0.0, "null_std": 0.0, "z": 0.0}
+                             for c, lbl in TRIAD_NAMES.items()])
+        meta = {"n_nodes": G.number_of_nodes(), "n_edges": G.number_of_edges(),
+                "sampled": sampled, "top_k": top_k if sampled else None, "n_null": n_null}
+        return prof, meta
+
     obs = nx.triadic_census(G)
     rng = np.random.default_rng(seed)
     n_edges = G.number_of_edges()
@@ -980,7 +1063,11 @@ def cross_layer_communities(method: str = "leiden", seed: int = 42) -> tuple[pd.
 
     out = {}
     for layer in ("movement", "finance"):
-        g = _igraph_from_edges(_aligned_agg(layer, "club"))
+        agg = _aligned_agg(layer, "club")
+        if agg.empty:                                  # filter left no edges in this layer
+            out[layer] = pd.DataFrame({"node": [], f"{layer}_comm": []})
+            continue
+        g = _igraph_from_edges(agg)
         mem = _detect(g, method, seed)
         out[layer] = pd.DataFrame({"node": g.vs["name"], f"{layer}_comm": mem})
     df = out["movement"].merge(out["finance"], on="node", how="outer")
