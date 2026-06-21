@@ -97,6 +97,10 @@ _CSS = f"""
 [data-testid="stSidebarHeader"], [data-testid="stSidebar"] [data-testid="stLogo"] {{
   margin:0 auto; }}
 [data-testid="stLogo"] {{ width:96px; height:auto; }}
+/* larger logo when the sidebar is expanded (header logo); the collapsed
+   top-bar icon keeps the compact size above */
+[data-testid="stSidebarHeader"] [data-testid="stLogo"],
+[data-testid="stSidebar"] [data-testid="stLogo"] {{ width:180px; height:auto; }}
 
 /* headings */
 h1 {{ color:var(--sand); font-weight:800; letter-spacing:-0.5px; }}
