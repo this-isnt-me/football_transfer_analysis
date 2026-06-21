@@ -42,29 +42,21 @@ def topx(key: str, default: int = 20, lo: int = 5, hi: int = 40) -> int:
     return st.slider("Top-X", lo, hi, default, key=f"topx_{key}")
 
 
-def exclude_os(key: str, grain: str, default: bool = True, *,
-               label: str = "Exclude non-club nodes (OS1, Without Club, UnknownUnknown)",
-               help: str | None = (
-                   "OS1 (external clubs), Without Club (free agency) and UnknownUnknown are "
-                   "catch-all pseudo-nodes — they otherwise top club rankings. Excluded by "
-                   "default and shown separately rather than ranked beside real clubs.")) -> bool:
-    """Non-club-node exclusion checkbox (club grain only; False otherwise).
-
-    ``label`` / ``help`` are overridable so call sites keep their exact wording.
-    Key namespaced ``os_<key>``."""
-    if grain != "club":
-        return False
-    return st.checkbox(label, value=default, key=f"os_{key}", help=help)
+def exclude_os(key: str, grain: str, default: bool = True, **_kw) -> bool:
+    """Non-club nodes (OS1, Without Club, UnknownUnknown) are now removed from
+    every metric *upstream* in the data layer (see ``metrics.club_edges``), so
+    excluding them is no longer a user choice. Retained as a no-op — renders
+    nothing — for call-site compatibility; returns True at club grain so any
+    residual post-filter stays a harmless no-op."""
+    return grain == "club"
 
 
 def maybe_drop_os(df, grain, exclude, id_col="node"):
-    """Return ``(ranked_without_pseudo_nodes, os_row)``; drops all catch-all
-    pseudo-nodes (OS1, Without Club, UnknownUnknown) for consistency with the
-    rest of the app, and surfaces the OS1 row for the reference caption. No-op
-    (empty os_row) off club grain."""
+    """Compatibility shim: the catch-all nodes are already gone (filtered
+    upstream), so this just returns the frame unchanged plus an empty ``os_row``
+    (the old Outside-System reference row no longer applies)."""
     if grain == "club" and exclude:
-        os_row = df[df[id_col] == M.OUTSIDE_SYSTEM_ID]
-        return M.drop_non_clubs(df, id_col), os_row
+        return M.drop_non_clubs(df, id_col), df.iloc[0:0]
     return df, df.iloc[0:0]
 
 
@@ -113,6 +105,11 @@ def section_page(page_title: str, title: str, caption: str, analyses: dict, key:
     theme.apply_chrome()
     st.title(title)
     st.caption(caption)
+    st.caption(
+        "ℹ️ Non-club nodes — Outside System, free agency (“Without Club”) and "
+        "unknown-status moves — are filtered out of every metric here, so the figures "
+        "reflect genuine club-to-club activity. They stay visible in **Transfer Flow Maps**."
+    )
     choice = st.sidebar.radio("Pick an analysis", list(analyses.keys()), key=key)
     st.divider()
     if explain and choice in explain:

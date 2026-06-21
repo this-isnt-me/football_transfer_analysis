@@ -25,10 +25,10 @@ import pandas as pd
 import streamlit as st
 
 from .data_layer import (
-    get_edges,
+    get_edges as _raw_get_edges,
     get_graph,
     get_league_names,
-    get_p1,
+    get_p1 as _raw_get_p1,
     get_p2,
     node_names,
     p2_violations,
@@ -85,13 +85,41 @@ def drop_non_clubs(df: pd.DataFrame, id_col: str = "node") -> pd.DataFrame:
 
 
 # --------------------------------------------------------------------------- #
+# Club-only data taps — the SINGLE source for every analysis except the Section
+# 5 Sankeys and the #16 reconciliation check.
+#
+# The non-club catch-all nodes (OS1 = Outside System, 515 = Without Club / free
+# agency, 75 = UnknownUnknown) are removed from BOTH endpoints *before* any
+# metric is computed, so graph algorithms (PageRank, betweenness, communities,
+# reciprocity, triads) measure genuine club-to-club structure rather than being
+# dominated by these hubs. Removing an edge because one endpoint is a catch-all
+# is correct here: a release to free agency or a move from "outside the system"
+# is not a club-to-club transfer. At league grain only OS1 is present (515/75
+# are club-level ids), so this drops the Outside-System league and leaves the
+# ten real leagues.
+# --------------------------------------------------------------------------- #
+@st.cache_data(show_spinner=False)
+def club_edges(name: str) -> pd.DataFrame:
+    """Edge frame with non-club catch-all endpoints removed (see module note)."""
+    df = _raw_get_edges(name)
+    return df[~df["source"].isin(NON_CLUB_IDS) & ~df["target"].isin(NON_CLUB_IDS)].copy()
+
+
+@st.cache_data(show_spinner=False)
+def club_p1(level: str = "club") -> pd.DataFrame:
+    """P1 deal join with non-club endpoints removed (see :func:`club_edges`)."""
+    p1 = _raw_get_p1(level)
+    return p1[~p1["source"].isin(NON_CLUB_IDS) & ~p1["target"].isin(NON_CLUB_IDS)].copy()
+
+
+# --------------------------------------------------------------------------- #
 # Aggregated simple graphs (parallel edges collapsed)
 # --------------------------------------------------------------------------- #
 @st.cache_data(show_spinner="Aggregating edges…")
 def aggregated_edges(layer: str, grain: str) -> pd.DataFrame:
     """One row per directed ``(source, target)`` pair with:
     ``n`` = transfer count, ``fee`` = summed finance weight (NaN for movement)."""
-    df = get_edges(f"{layer}_{grain}")
+    df = club_edges(f"{layer}_{grain}")
     g = df.groupby(["source", "target"], observed=True)
     agg = g.size().reset_index(name="n")
     if layer == "finance":
@@ -115,7 +143,7 @@ def _digraph(agg: pd.DataFrame, weight_col: str) -> nx.DiGraph:
 @st.cache_data(show_spinner=False)
 def degree_table(grain: str) -> pd.DataFrame:
     """Movement in/out-degree per node (out = players sold, in = recruited)."""
-    df = get_edges(f"movement_{grain}")
+    df = club_edges(f"movement_{grain}")
     out = df.groupby("source", observed=True).size().rename("out_degree")
     inn = df.groupby("target", observed=True).size().rename("in_degree")
     t = pd.concat([out, inn], axis=1).fillna(0).astype(int)
@@ -150,8 +178,17 @@ def betweenness_table(k: int = 500, seed: int = 42) -> pd.DataFrame:
     """Approximate betweenness on the aggregated movement-club graph.
 
     Hop-distance (unweighted) Brandes with ``k`` pivot sources — an estimate,
-    not exact. Club-level only (degenerate at 11 league nodes)."""
+    not exact. Club-level only (degenerate at 11 league nodes).
+
+    Safeguard: with the catch-all hub OS1 removed, the club graph can split into
+    a giant component plus a few peripheral clubs that only ever traded outside
+    the system. Betweenness (a shortest-path measure) is only meaningful within a
+    connected component, so we compute it on the **largest weakly-connected
+    component**; clubs outside it score 0 by construction and are dropped."""
     G = _digraph(aggregated_edges("movement", "club"), "n")
+    if G.number_of_nodes():
+        lcc = max(nx.weakly_connected_components(G), key=len)
+        G = G.subgraph(lcc).copy()
     k = min(k, G.number_of_nodes())
     bc = nx.betweenness_centrality(G, k=k, seed=seed, weight=None, normalized=True)
     t = pd.DataFrame({"node": list(bc.keys()), "betweenness": list(bc.values())})
@@ -169,7 +206,7 @@ def finance_strength_table(grain: str) -> pd.DataFrame:
     revenue = in-strength  (money received)
     net_profit = revenue - spend ; net_spend = spend - revenue
     """
-    df = get_edges(f"finance_{grain}")
+    df = club_edges(f"finance_{grain}")
     spend = df.groupby("source", observed=True)["weight"].sum().rename("spend")
     revenue = df.groupby("target", observed=True)["weight"].sum().rename("revenue")
     t = pd.concat([spend, revenue], axis=1).fillna(0.0)
@@ -248,7 +285,7 @@ def reciprocal_dyads(layer: str, grain: str, top: int = 25) -> pd.DataFrame:
 @st.cache_data(show_spinner=False)
 def position_volume(grain: str, side: str = "out") -> pd.DataFrame:
     """Transfer counts per node x position. ``side`` = out (sold) / in (bought)."""
-    df = get_edges(f"movement_{grain}")
+    df = club_edges(f"movement_{grain}")
     key = "source" if side == "out" else "target"
     t = (
         df.groupby([key, "position"], observed=True).size()
@@ -264,7 +301,7 @@ def position_volume(grain: str, side: str = "out") -> pd.DataFrame:
 # --------------------------------------------------------------------------- #
 @st.cache_data(show_spinner=False)
 def seasonal_degree(grain: str, side: str = "out") -> pd.DataFrame:
-    df = get_edges(f"movement_{grain}")
+    df = club_edges(f"movement_{grain}")
     key = "source" if side == "out" else "target"
     t = (
         df.groupby([key, "season"], observed=True).size()
@@ -277,7 +314,7 @@ def seasonal_degree(grain: str, side: str = "out") -> pd.DataFrame:
 @st.cache_data(show_spinner=False)
 def seasonal_finance(grain: str) -> pd.DataFrame:
     """Per node x season spend (out) and revenue (in) on finance."""
-    df = get_edges(f"finance_{grain}")
+    df = club_edges(f"finance_{grain}")
     spend = (df.groupby(["source", "season"], observed=True)["weight"].sum()
              .reset_index().rename(columns={"source": "node", "weight": "spend"}))
     rev = (df.groupby(["target", "season"], observed=True)["weight"].sum()
@@ -294,7 +331,7 @@ def seasonal_finance(grain: str) -> pd.DataFrame:
 @st.cache_data(show_spinner=False)
 def window_volume(grain: str) -> pd.DataFrame:
     """Per-node transfer volume split by window (out-degree based)."""
-    df = get_edges(f"movement_{grain}")
+    df = club_edges(f"movement_{grain}")
     t = (df.groupby(["source", "window"], observed=True).size()
          .reset_index(name="count").rename(columns={"source": "node"}))
     t["node"] = t["node"].astype(str)
@@ -304,7 +341,7 @@ def window_volume(grain: str) -> pd.DataFrame:
 @st.cache_data(show_spinner=False)
 def position_supply(grain: str) -> pd.DataFrame:
     """Movement transfer counts per season x position (supply over time)."""
-    df = get_edges(f"movement_{grain}")
+    df = club_edges(f"movement_{grain}")
     return (df.groupby(["season", "position"], observed=True).size()
             .reset_index(name="count"))
 
@@ -315,7 +352,7 @@ def position_supply(grain: str) -> pd.DataFrame:
 @st.cache_data(show_spinner=False)
 def fee_edges(grain: str) -> pd.DataFrame:
     """Edge-level finance fees with position/window/season for distributions."""
-    df = get_edges(f"finance_{grain}")
+    df = club_edges(f"finance_{grain}")
     return df[["weight", "position", "window", "season"]].rename(columns={"weight": "fee"})
 
 
@@ -338,10 +375,10 @@ def ego_edges(club_id: str, season: int, window: str) -> pd.DataFrame:
     Returns columns: source, target, position, fee (NaN if no finance edge),
     direction (in/out relative to the club).
     """
-    mv = get_edges("movement_club")
+    mv = club_edges("movement_club")
     mv = mv[(mv["season"] == season) & (mv["window"] == window)]
     mv = mv[(mv["source"] == club_id) | (mv["target"] == club_id)]
-    fin = get_edges("finance_club")[["transfer_id", "weight"]].rename(columns={"weight": "fee"})
+    fin = club_edges("finance_club")[["transfer_id", "weight"]].rename(columns={"weight": "fee"})
     out = mv.merge(fin, on="transfer_id", how="left")
     out["direction"] = np.where(out["source"] == club_id, "out", "in")
     return out[["source", "target", "position", "fee", "direction", "transfer_id"]]
@@ -397,8 +434,11 @@ def aggregation_reconciliation(layer: str) -> dict:
     diff exactly zero. Returns a summary dict plus a (hopefully empty) frame of
     mismatched cells with league names attached.
     """
-    club = get_edges(f"{layer}_club")
-    league = get_edges(f"{layer}_league")
+    # #16 is a data-integrity check: it must validate that the FULL raw club data
+    # rolls up to the FULL league network. Filtering either side would break the
+    # reconciliation by design, so this analysis deliberately uses raw edges.
+    club = _raw_get_edges(f"{layer}_club")
+    league = _raw_get_edges(f"{layer}_league")
     e = _relabel_to_league(club)
     unmapped = int(e["source_league"].isna().sum() + e["target_league"].isna().sum())
 
@@ -463,7 +503,7 @@ def club_league_membership(layer: str) -> pd.DataFrame:
 
     Used to allocate a club node-metric across the leagues it played in, so
     league-switchers are split proportionally rather than force-assigned."""
-    e = _relabel_to_league(get_edges(f"{layer}_club"))
+    e = _relabel_to_league(club_edges(f"{layer}_club"))
     a = e[["source", "source_league"]].rename(columns={"source": "club", "source_league": "league"})
     b = e[["target", "target_league"]].rename(columns={"target": "club", "target_league": "league"})
     appear = pd.concat([a, b], ignore_index=True).dropna()
@@ -542,12 +582,12 @@ def club_league_by_season() -> pd.DataFrame:
 def _club_season_metric(metric: str) -> pd.DataFrame:
     """Per ``(club, season)`` value of the base metric -> ``club``, ``season``, ``value``."""
     if metric == "volume":
-        df = get_edges("movement_club")
+        df = club_edges("movement_club")
         out = df.groupby(["source", "season"], observed=True).size().rename_axis(["club", "season"])
         inn = df.groupby(["target", "season"], observed=True).size().rename_axis(["club", "season"])
         s = out.add(inn, fill_value=0).rename("value").reset_index()
     else:  # spend / revenue (finance reversal: spend=out/source, revenue=in/target)
-        df = get_edges("finance_club")
+        df = club_edges("finance_club")
         col = "source" if metric == "spend" else "target"
         s = (df.groupby([col, "season"], observed=True)["weight"].sum()
              .rename_axis(["club", "season"]).rename("value").reset_index())
@@ -557,12 +597,12 @@ def _club_season_metric(metric: str) -> pd.DataFrame:
 def _league_season_metric(metric: str) -> pd.DataFrame:
     """Per ``(league, season)`` total from the league network -> ``league``, ``season``, ``league_total``."""
     if metric == "volume":
-        df = get_edges("movement_league")
+        df = club_edges("movement_league")
         out = df.groupby(["source", "season"], observed=True).size().rename_axis(["league", "season"])
         inn = df.groupby(["target", "season"], observed=True).size().rename_axis(["league", "season"])
         s = out.add(inn, fill_value=0).rename("league_total").reset_index()
     else:
-        df = get_edges("finance_league")
+        df = club_edges("finance_league")
         col = "source" if metric == "spend" else "target"
         s = (df.groupby([col, "season"], observed=True)["weight"].sum()
              .rename_axis(["league", "season"]).rename("league_total").reset_index())
@@ -663,7 +703,7 @@ def _label_corridor(df: pd.DataFrame, grain: str) -> pd.DataFrame:
 def corridor_flow_money(grain: str) -> pd.DataFrame:
     """Per movement corridor ``(sell, buy)``: player count (all moves) vs money
     (summed/median matched fee). Money excludes NULL-fee moves; counts include all."""
-    p1 = get_p1(grain)
+    p1 = club_p1(grain)
     g = p1.groupby(["source", "target"], observed=True)
     out = g.agg(
         n_players=("transfer_id", "size"),
@@ -685,7 +725,7 @@ def fee_per_player(grain: str, by: str = "corridor", min_deals: int = 3) -> pd.D
 
     ``min_deals`` filters out thin groups whose median is noise. Median (not mean)
     per the skew rule; the ~22k NULL-fee moves never enter the stat."""
-    matched = get_p1(grain)
+    matched = club_p1(grain)
     matched = matched[matched["matched"]]
     if by == "corridor":
         keys = ["source", "target"]
@@ -709,7 +749,7 @@ def fee_per_player(grain: str, by: str = "corridor", min_deals: int = 3) -> pd.D
 @st.cache_data(show_spinner=False)
 def matched_fees(grain: str) -> pd.Series:
     """All per-deal matched fees (for the #20 distribution histogram)."""
-    p1 = get_p1(grain)
+    p1 = club_p1(grain)
     return p1.loc[p1["matched"], "fee"].dropna()
 
 
@@ -750,7 +790,7 @@ def prestige_divergence(grain: str, lens: str = "selling") -> tuple[pd.DataFrame
 @st.cache_data(show_spinner=False)
 def positional_fee_time(grain: str) -> pd.DataFrame:
     """Median fee per ``(position, season)`` from matched deals (P1)."""
-    p1 = get_p1(grain)
+    p1 = club_p1(grain)
     m = p1[p1["matched"]].dropna(subset=["position", "season"])
     med = (m.groupby(["position", "season"], observed=True)["fee"]
            .median().reset_index().rename(columns={"fee": "median_fee"}))
@@ -764,7 +804,7 @@ def positional_fee_time(grain: str) -> pd.DataFrame:
 @st.cache_data(show_spinner=False)
 def window_fee(grain: str) -> pd.DataFrame:
     """Matched per-deal fees with window/position/season (for #23 paired boxes)."""
-    p1 = get_p1(grain)
+    p1 = club_p1(grain)
     m = p1[p1["matched"]].dropna(subset=["window"])
     return m[["window", "position", "season", "fee"]].copy()
 
@@ -793,8 +833,7 @@ def triad_profile(grain: str, top_k: int = 60, n_null: int = 20, seed: int = 42)
     G = _digraph(agg, "n")
     sampled = False
     if grain == "club":
-        deg = degree_table("club")
-        deg = drop_outside_system(deg)
+        deg = degree_table("club")  # already club-only (non-club nodes filtered upstream)
         deg["total"] = deg["in_degree"] + deg["out_degree"]
         keep = set(deg.nlargest(top_k, "total")["node"])
         G = G.subgraph(keep).copy()
@@ -841,7 +880,7 @@ def capital_asymmetry(grain: str) -> pd.DataFrame:
 
     Finance reversal handled via the movement orientation: in a movement edge the
     source SOLD (receives fee = revenue), the target BOUGHT (pays fee = spend)."""
-    p1 = get_p1(grain)
+    p1 = club_p1(grain)
     m = p1[p1["matched"]].dropna(subset=["position"])
     revenue = (m.groupby(["source", "position"], observed=True)["fee"].sum()
                .rename("revenue").rename_axis(["node", "position"]))
@@ -968,7 +1007,7 @@ def community_subgraph(method: str, top_n: int, seed: int = 42) -> tuple[pd.Data
     subgraph for a drawable community-coloured layout. Returns (nodes, edges) with
     a spring layout and the movement-community colour."""
     comm, _ = cross_layer_communities(method, seed)
-    rank = drop_outside_system(club_volume_ranking()).head(top_n)
+    rank = club_volume_ranking().head(top_n)  # already club-only (filtered upstream)
     keep = set(rank["node"])
     agg = _aligned_agg("movement", "club")
     sub = agg[(agg["source"].isin(keep)) & (agg["target"].isin(keep))]
@@ -1043,7 +1082,7 @@ def community_drift(method: str = "leiden", top_k: int = 5, min_size: int = 15,
     ``top_k`` largest communities and give them persistent ids by greedy Jaccard
     matching to the previous season. Returns a tidy (season, stream_id, size)
     frame for a streamgraph + a stability stat (mean best-Jaccard)."""
-    mv = get_edges("movement_club")
+    mv = club_edges("movement_club")
     seasons = sorted(mv["season"].dropna().unique().astype(int))
     prev: list[set] = []           # member-sets of last season's tracked streams
     prev_ids: list[int] = []
@@ -1092,20 +1131,16 @@ def community_drift(method: str = "leiden", top_k: int = 5, min_size: int = 15,
 # #30 Shock detection & propagation
 # --------------------------------------------------------------------------- #
 @st.cache_data(show_spinner=False)
-def shock_series(grain: str, metric: str, exclude_os: bool) -> pd.DataFrame:
+def shock_series(grain: str, metric: str) -> pd.DataFrame:
     """Aggregate per-season series with a robust (median/MAD) anomaly z-score.
 
-    metric = ``volume`` (movement edges) or ``fee`` (finance €). ``exclude_os``
-    drops any edge touching OS1, since external flows can mask domestic shocks."""
+    metric = ``volume`` (movement edges) or ``fee`` (finance €). Non-club nodes
+    are already filtered upstream, so this reflects within-system club activity."""
     if metric == "volume":
-        df = get_edges(f"movement_{grain}")
-        if exclude_os and grain == "club":
-            df = df[(df["source"] != OUTSIDE_SYSTEM_ID) & (df["target"] != OUTSIDE_SYSTEM_ID)]
+        df = club_edges(f"movement_{grain}")
         s = df.groupby("season", observed=True).size().rename("value")
     else:
-        df = get_edges(f"finance_{grain}")
-        if exclude_os and grain == "club":
-            df = df[(df["source"] != OUTSIDE_SYSTEM_ID) & (df["target"] != OUTSIDE_SYSTEM_ID)]
+        df = club_edges(f"finance_{grain}")
         s = df.groupby("season", observed=True)["weight"].sum().rename("value")
     t = s.reset_index()
     t["season"] = t["season"].astype(int)
@@ -1143,11 +1178,11 @@ def position_league_matrix(value: str, side: str) -> pd.DataFrame:
     ``fee`` (finance €). ``side`` = ``buyer`` (imports/spend) or ``seller``
     (exports/revenue). Aligned via the finance reversal: buyer = finance source."""
     if value == "volume":
-        df = get_edges("movement_league")
+        df = club_edges("movement_league")
         key = "target" if side == "buyer" else "source"   # movement: target=buyer
         t = df.groupby([key, "position"], observed=True).size().reset_index(name="val")
     else:
-        df = get_edges("finance_league")
+        df = club_edges("finance_league")
         key = "source" if side == "buyer" else "target"   # finance: source=buyer (reversal)
         t = df.groupby([key, "position"], observed=True)["weight"].sum().reset_index(name="val")
     t = t.rename(columns={t.columns[0]: "league"})
@@ -1166,7 +1201,7 @@ def feeder_clubs(grain: str) -> pd.DataFrame:
     the top-3 destinations. Feeder signature = sell players + net money IN."""
     deg = degree_table(grain)[["node", "label", "out_degree", "in_degree"]]
     fs = finance_strength_table(grain)[["node", "spend", "revenue"]]
-    edges = get_edges(f"movement_{grain}")
+    edges = club_edges(f"movement_{grain}")
     out_pairs = edges.groupby(["source", "target"], observed=True).size().reset_index(name="n")
 
     # Herfindahl of each seller's destination distribution
@@ -1215,7 +1250,7 @@ WINDOW_ORDER = {"summer": 0, "winter": 1}
 @st.cache_data(show_spinner=False)
 def sankey_stages() -> pd.DataFrame:
     """Ordered (season, window) stages with an integer ``stage`` index and label."""
-    mv = get_edges("movement_league")[["season", "window"]].dropna().drop_duplicates()
+    mv = _raw_get_edges("movement_league")[["season", "window"]].dropna().drop_duplicates()
     mv["season"] = mv["season"].astype(int)
     mv["wo"] = mv["window"].map(WINDOW_ORDER)
     mv = mv.sort_values(["season", "wo"]).reset_index(drop=True)
@@ -1232,7 +1267,9 @@ def sankey_flows(layer: str) -> pd.DataFrame:
     ``stage`` is the ordered (season, window) index from :func:`sankey_stages`.
     Orientation is the raw edge orientation: movement = seller->buyer (player
     path); finance = buyer->seller (money path), shown as-is."""
-    df = get_edges(f"{layer}_league").dropna(subset=["season", "window", "source", "target"])
+    # Sankeys keep the FULL data (incl. OS1 / free-agency) so users can see
+    # players flowing in and out of free agency and outside-system clubs.
+    df = _raw_get_edges(f"{layer}_league").dropna(subset=["season", "window", "source", "target"])
     g = df.groupby(["season", "window", "source", "target"], observed=True)
     agg = (g.size().reset_index(name="weight") if layer == "movement"
            else g["weight"].sum().reset_index())

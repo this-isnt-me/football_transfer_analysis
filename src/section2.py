@@ -153,7 +153,7 @@ def render_18():
                "pattern: flat/falling league total while concentration rises = rich-get-richer "
                "*inside* the league. Shaded seasons = the two trajectories move opposite ways.")
     names = get_league_names()
-    ids = sorted(names, key=lambda i: names[i])
+    ids = [i for i in sorted(names, key=lambda i: names[i]) if i != M.OUTSIDE_SYSTEM_ID]
     c1, c2, c3 = st.columns(3)
     with c1:
         league_id = st.selectbox("League", ids, format_func=lambda i: f"{names[i]} [{i}]",

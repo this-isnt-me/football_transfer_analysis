@@ -136,10 +136,6 @@ def render_28():
     with c3:
         wp = st.slider("Weight: prestige", 0.0, 2.0, 1.0, 0.25, key="wp28")
     dom = M.dominance_index(grain, wt, wm, wp)
-    if grain == "club":
-        if st.checkbox("Exclude non-club nodes (OS1, Without Club, UnknownUnknown)",
-                       value=True, key="nc28"):
-            dom = M.drop_non_clubs(dom)
     top = dom.head(15)
 
     fig = px.bar(top, x="dominance", y="label", orientation="h",
@@ -201,17 +197,14 @@ def render_30():
     st.subheader("30 · Market Shocks & Crashes")
     st.caption("Anomalies on the **detrended** (year-on-year) series — both metrics trend "
                "up, so shocks like the 2020 COVID dip show in YoY, not the raw level.")
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3 = st.columns(3)
     with c1:
         grain = ui.grain_control("30", default="league")
     with c2:
         metric = st.radio("Metric", ["fee", "volume"], horizontal=True, key="met30")
     with c3:
         thr = st.slider("|robust z| threshold", 1.5, 4.0, 2.0, 0.5, key="thr30")
-    with c4:
-        excl = st.checkbox("Exclude OS flows", value=False, key="os30",
-                           help="External flows can mask domestic shocks.") if grain == "club" else False
-    s = M.shock_series(grain, metric, excl)
+    s = M.shock_series(grain, metric)
     flagged = s[s["rz"].abs() > thr]
 
     yfac = 1e9 if metric == "fee" else 1

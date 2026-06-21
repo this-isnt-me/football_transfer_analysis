@@ -81,11 +81,7 @@ def render_20():
         min_d = st.slider("Min deals", 1, 25, 5, key="md20",
                           help="Filter thin groups whose median is noise.")
 
-    fpp = M.fee_per_player(grain, by=by, min_deals=min_d)
-    if grain == "club" and "os_involved" in fpp.columns:
-        if st.checkbox("Exclude Outside-System", value=True, key="osx20"):
-            fpp = fpp[~fpp["os_involved"]]
-    fpp = fpp.copy()
+    fpp = M.fee_per_player(grain, by=by, min_deals=min_d).copy()
     fpp["median_m"] = fpp["median_fee"] / 1e6
     label_col = "corridor" if by == "corridor" else "label"
     top = fpp.nlargest(n, "median_fee")
@@ -264,9 +260,6 @@ def render_25():
     grain = ui.grain_control("25")
     n = st.slider("Top-X nodes (by gross money)", 5, 30, 18, key="n25")
     ca = M.capital_asymmetry(grain)
-    if grain == "club":
-        if st.checkbox("Exclude Outside System (OS1)", value=True, key="os25"):
-            ca = M.drop_non_clubs(ca)
     totals = ca.groupby(["node", "label"], observed=True)["gross"].sum().reset_index()
     keep = totals.nlargest(n if grain == "club" else 11, "gross")["node"]
     sub = ca[ca["node"].isin(keep)].copy()

@@ -19,7 +19,6 @@ import streamlit as st
 
 from . import metrics as M
 from . import ui
-from .data_layer import get_edges
 from .ui import PALETTE
 
 
@@ -94,7 +93,9 @@ def render_02():
 def render_03():
     st.subheader("3 · Transfer Middlemen")
     st.warning("Club-level only and **approximate** — Brandes with k pivot sources "
-               "on hop-distance. Read as ranks, not exact values.", icon="⚠️")
+               "on hop-distance, computed on the largest connected component of the "
+               "club-only network (after removing outside-system / free-agency hubs). "
+               "Read as ranks, not exact values.", icon="⚠️")
     c1, c2, c3 = st.columns(3)
     with c1:
         k = st.select_slider("Pivot sources (k)", [200, 300, 500, 750, 1000], value=500, key="k03")
@@ -456,23 +457,22 @@ def render_15():
     st.caption("A single club's buys (in) and sells (out) for one window. "
                "Edge colour = position, width = fee (via the P1 transfer_id join). "
                "This is the only full node-link drawing in Section 1.")
-    ranking = M.club_volume_ranking()
-    ranking = M.drop_non_clubs(ranking)
+    ranking = M.club_volume_ranking()  # already club-only (filtered upstream)
     top = ranking.head(60)
     c1, c2, c3 = st.columns([2, 1, 1])
     with c1:
         choice = st.selectbox("Club", top["label"].tolist(), key="club15")
         club_id = top.loc[top["label"] == choice, "node"].iloc[0]
-    edges_all = get_edges("movement_club")
-    club_edges = edges_all[(edges_all["source"] == club_id) | (edges_all["target"] == club_id)]
+    edges_all = M.club_edges("movement_club")
+    club_rows = edges_all[(edges_all["source"] == club_id) | (edges_all["target"] == club_id)]
     with c2:
-        seasons = sorted(club_edges["season"].dropna().unique().tolist())
+        seasons = sorted(club_rows["season"].dropna().unique().tolist())
         if not seasons:
             st.info("No transfers for this club.")
             return
         season = st.selectbox("Season", seasons, index=len(seasons) - 1, key="season15")
     with c3:
-        windows = sorted(club_edges[club_edges["season"] == season]["window"].dropna().unique())
+        windows = sorted(club_rows[club_rows["season"] == season]["window"].dropna().unique())
         window = st.selectbox("Window", windows, key="window15")
 
     ego = M.ego_edges(club_id, int(season), window)
