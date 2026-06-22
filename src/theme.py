@@ -94,13 +94,14 @@ _CSS = f"""
 
 /* sidebar */
 [data-testid="stSidebar"] {{ background:#16181C; border-right:1px solid var(--border); }}
-[data-testid="stSidebarHeader"], [data-testid="stSidebar"] [data-testid="stLogo"] {{
-  margin:0 auto; }}
-[data-testid="stLogo"] {{ width:96px; height:auto; }}
-/* larger logo when the sidebar is expanded (header logo); the collapsed
-   top-bar icon keeps the compact size above */
-[data-testid="stSidebarHeader"] [data-testid="stLogo"],
-[data-testid="stSidebar"] [data-testid="stLogo"] {{ width:180px; height:auto; }}
+/* Expanded-sidebar logo: enlarged (st.logo sizes by HEIGHT, so we override
+   height, not width) and centred. The collapsed top-bar icon renders OUTSIDE
+   [data-testid="stSidebar"], so scoping here leaves it at its normal size. */
+[data-testid="stSidebar"] [data-testid="stSidebarLogo"] {{
+  display:flex; justify-content:center; width:100%; }}
+[data-testid="stSidebar"] [data-testid="stLogo"] {{
+  height:5rem !important; width:auto !important; max-height:none !important;
+  margin-left:auto !important; margin-right:auto !important; }}
 
 /* headings */
 h1 {{ color:var(--sand); font-weight:800; letter-spacing:-0.5px; }}
